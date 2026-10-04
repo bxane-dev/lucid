@@ -5,9 +5,13 @@ import re
 import mne
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import GroupShuffleSplit
 
-from .preprocess import DEFAULT_PREPROCESS, is_acceptable_trial, normalize_trial, preprocess_raw
+from .preprocess import (
+    DEFAULT_PREPROCESS,
+    is_acceptable_trial,
+    normalize_trial,
+    preprocess_raw,
+)
 
 
 @dataclass
@@ -22,13 +26,16 @@ def _subject_from_path(path: Path) -> str:
     for part in path.parts:
         if part.startswith("sub-"):
             return part
+
     match = re.search(r"(sub-[A-Za-z0-9]+)", path.name)
     return match.group(1) if match else "unknown"
 
 
 def _events_path(edf_path: Path) -> Path:
     if edf_path.name.endswith("_eeg.edf"):
-        return edf_path.with_name(edf_path.name.replace("_eeg.edf", "_events.tsv"))
+        return edf_path.with_name(
+            edf_path.name.replace("_eeg.edf", "_events.tsv")
+        )
     return edf_path.with_suffix(".tsv")
 
 
@@ -41,12 +48,25 @@ def _event_label(row: pd.Series) -> str | None:
     return None
 
 
-def extract_trials_from_recording(edf_path: Path, *, window_seconds: float = 2.0) -> list[TrialRecord]:
+def extract_trials_from_recording(
+    edf_path: Path,
+    *,
+    window_seconds: float = 2.0,
+) -> list[TrialRecord]:
     events_path = _events_path(edf_path)
-    if not events_path.exists():
-        raise FileNotFoundError(f"Missing BIDS events file for {edf_path}: {events_path}")
 
-    raw = preprocess_raw(mne.io.read_raw_edf(edf_path, preload=False, verbose="ERROR"))
+    if not events_path.exists():
+        raise FileNotFoundError(
+            f"Missing BIDS events file for {edf_path}: {events_path}"
+        )
+
+    raw = preprocess_raw(
+        mne.io.read_raw_edf(
+            edf_path,
+            preload=False,
+            verbose="ERROR",
+        )
+    )
     sfreq = float(raw.info["sfreq"])
     samples = int(round(window_seconds * sfreq))
     events = pd.read_csv(events_path, sep="\t")
@@ -55,16 +75,30 @@ def extract_trials_from_recording(edf_path: Path, *, window_seconds: float = 2.0
 
     for _, row in events.iterrows():
         label = _event_label(row)
+
         if label is None or "onset" not in row or pd.isna(row["onset"]):
             continue
+
         start = int(round(float(row["onset"]) * sfreq))
         stop = start + samples
+
         if start < 0 or stop > raw.n_times:
             continue
+
         trial = raw.get_data(start=start, stop=stop)
+
         if trial.shape[-1] != samples or not is_acceptable_trial(trial):
             continue
-        out.append(TrialRecord(normalize_trial(trial), label, subject, str(edf_path)))
+
+        out.append(
+            TrialRecord(
+                normalize_trial(trial),
+                label,
+                subject,
+                str(edf_path),
+            )
+        )
+
     return out
 
 
@@ -72,55 +106,138 @@ def discover_edf(dataset_root: Path) -> list[Path]:
     return sorted(dataset_root.rglob("*_eeg.edf"))
 
 
-def subject_group_split(groups: np.ndarray, random_state: int = 42) -> np.ndarray:
+def subject_group_split(
+    groups: np.ndarray,
+    random_state: int = 42,
+) -> np.ndarray:
+    """
+    Deterministically split whole participants into train/validation/test.
+
+    For three subjects this produces exactly one subject in each split.
+    Larger datasets keep approximately 70/15/15 while guaranteeing every
+    split contains at least one held-out participant.
+    """
     groups = np.asarray(groups)
-    if np.unique(groups).size < 3:
-        raise ValueError("Subject-held-out splitting needs at least 3 participants.")
-    indices = np.arange(len(groups))
-    first = GroupShuffleSplit(n_splits=1, train_size=0.70, random_state=random_state)
-    train_idx, remainder_idx = next(first.split(indices, groups=groups))
-    remainder_groups = groups[remainder_idx]
-    second = GroupShuffleSplit(n_splits=1, train_size=0.50, random_state=random_state + 1)
-    val_rel, test_rel = next(second.split(np.arange(len(remainder_idx)), groups=remainder_groups))
-    split = np.full(len(groups), 2, dtype=np.int8)
-    split[train_idx] = 0
-    split[remainder_idx[val_rel]] = 1
-    split[remainder_idx[test_rel]] = 2
+    unique_subjects = np.array(sorted(set(groups.tolist())), dtype="U64")
+    subject_count = len(unique_subjects)
+
+    if subject_count < 3:
+        raise ValueError(
+            "Subject-held-out splitting needs at least 3 participants."
+        )
+
+    rng = np.random.default_rng(random_state)
+    rng.shuffle(unique_subjects)
+
+    holdout_count = max(1, int(round(subject_count * 0.15)))
+    if 2 * holdout_count >= subject_count:
+        holdout_count = 1
+
+    val_subjects = set(unique_subjects[:holdout_count].tolist())
+    test_subjects = set(
+        unique_subjects[holdout_count : 2 * holdout_count].tolist()
+    )
+    train_subjects = set(
+        unique_subjects[2 * holdout_count :].tolist()
+    )
+
+    if not train_subjects or not val_subjects or not test_subjects:
+        raise RuntimeError(
+            "Failed to create non-empty train/validation/test subject splits."
+        )
+
+    split = np.full(len(groups), -1, dtype=np.int8)
+
+    for index, subject in enumerate(groups.tolist()):
+        if subject in train_subjects:
+            split[index] = 0
+        elif subject in val_subjects:
+            split[index] = 1
+        elif subject in test_subjects:
+            split[index] = 2
+
+    if np.any(split < 0):
+        raise RuntimeError("At least one trial was not assigned to a split.")
+
     return split
 
 
-def prepare_dataset(dataset_root: Path, output_path: Path, dataset_id: str) -> dict:
+def prepare_dataset(
+    dataset_root: Path,
+    output_path: Path,
+    dataset_id: str,
+) -> dict:
     edf_files = discover_edf(dataset_root)
+
     if not edf_files:
-        raise FileNotFoundError(f"No *_eeg.edf files found under {dataset_root}")
+        raise FileNotFoundError(
+            f"No *_eeg.edf files found under {dataset_root}"
+        )
+
     records: list[TrialRecord] = []
     for edf in edf_files:
         records.extend(extract_trials_from_recording(edf))
+
     if not records:
         raise RuntimeError("No valid annotated EEG trials were extracted.")
 
-    channel_counts = {r.data.shape[0] for r in records}
-    sample_counts = {r.data.shape[1] for r in records}
-    if len(channel_counts) != 1 or len(sample_counts) != 1:
-        raise RuntimeError(f"Inconsistent trial shapes: channels={channel_counts}, samples={sample_counts}")
+    channel_counts = {record.data.shape[0] for record in records}
+    sample_counts = {record.data.shape[1] for record in records}
 
-    labels = sorted({r.label for r in records})
-    label_to_idx = {label: i for i, label in enumerate(labels)}
-    x = np.stack([r.data for r in records]).astype(np.float32)
-    y = np.array([label_to_idx[r.label] for r in records], dtype=np.int64)
-    groups = np.array([r.subject for r in records], dtype="U32")
-    recordings = np.array([r.recording for r in records], dtype="U512")
+    if len(channel_counts) != 1 or len(sample_counts) != 1:
+        raise RuntimeError(
+            f"Inconsistent trial shapes: "
+            f"channels={channel_counts}, samples={sample_counts}"
+        )
+
+    labels = sorted({record.label for record in records})
+    label_to_idx = {
+        label: index
+        for index, label in enumerate(labels)
+    }
+
+    x = np.stack([record.data for record in records]).astype(np.float32)
+    y = np.array(
+        [label_to_idx[record.label] for record in records],
+        dtype=np.int64,
+    )
+    groups = np.array(
+        [record.subject for record in records],
+        dtype="U32",
+    )
+    recordings = np.array(
+        [record.recording for record in records],
+        dtype="U512",
+    )
     split = subject_group_split(groups)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
-        output_path, x=x, y=y, groups=groups, recordings=recordings, split=split,
-        labels=np.array(labels, dtype="U64"), dataset_id=np.array(dataset_id),
-        sfreq=np.array(DEFAULT_PREPROCESS.target_sfreq, dtype=np.float32),
+        output_path,
+        x=x,
+        y=y,
+        groups=groups,
+        recordings=recordings,
+        split=split,
+        labels=np.array(labels, dtype="U64"),
+        dataset_id=np.array(dataset_id),
+        sfreq=np.array(
+            DEFAULT_PREPROCESS.target_sfreq,
+            dtype=np.float32,
+        ),
     )
+
     return {
-        "trials": len(records), "channels": int(x.shape[1]), "samples": int(x.shape[2]),
-        "labels": labels, "subjects": sorted(set(groups.tolist())),
-        "train_trials": int((split == 0).sum()), "val_trials": int((split == 1).sum()),
-        "test_trials": int((split == 2).sum()), "output": str(output_path),
+        "trials": len(records),
+        "channels": int(x.shape[1]),
+        "samples": int(x.shape[2]),
+        "labels": labels,
+        "subjects": sorted(set(groups.tolist())),
+        "train_subjects": sorted(set(groups[split == 0].tolist())),
+        "val_subjects": sorted(set(groups[split == 1].tolist())),
+        "test_subjects": sorted(set(groups[split == 2].tolist())),
+        "train_trials": int((split == 0).sum()),
+        "val_trials": int((split == 1).sum()),
+        "test_trials": int((split == 2).sum()),
+        "output": str(output_path),
     }
