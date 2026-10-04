@@ -12,6 +12,7 @@ from .preprocess import (
     normalize_trial,
     preprocess_raw,
 )
+from .provenance import build_source_manifest, write_manifest
 
 
 @dataclass
@@ -175,8 +176,13 @@ def prepare_dataset(
         )
 
     records: list[TrialRecord] = []
+    provenance_sources: list[Path] = []
     for edf in edf_files:
-        records.extend(extract_trials_from_recording(edf))
+        events = _events_path(edf)
+        extracted = extract_trials_from_recording(edf)
+        if extracted:
+            provenance_sources.extend([edf, events])
+            records.extend(extracted)
 
     if not records:
         raise RuntimeError("No valid annotated EEG trials were extracted.")
@@ -210,6 +216,12 @@ def prepare_dataset(
         dtype="U512",
     )
     split = subject_group_split(groups)
+    manifest = build_source_manifest(
+        provenance_sources,
+        dataset_id=dataset_id,
+        dataset_root=dataset_root,
+    )
+    provenance_sha256 = manifest["manifest_sha256"]
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
@@ -221,11 +233,14 @@ def prepare_dataset(
         split=split,
         labels=np.array(labels, dtype="U64"),
         dataset_id=np.array(dataset_id),
+        provenance_sha256=np.array(provenance_sha256, dtype="U64"),
         sfreq=np.array(
             DEFAULT_PREPROCESS.target_sfreq,
             dtype=np.float32,
         ),
     )
+
+    manifest_path = write_manifest(manifest, output_path)
 
     return {
         "trials": len(records),
@@ -240,4 +255,6 @@ def prepare_dataset(
         "val_trials": int((split == 1).sum()),
         "test_trials": int((split == 2).sum()),
         "output": str(output_path),
+        "provenance_sha256": provenance_sha256,
+        "manifest": str(manifest_path),
     }
