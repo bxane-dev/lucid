@@ -48,12 +48,23 @@ def evaluate(model, loader, device):
     model.eval()
     ys = []
     preds = []
+
     with torch.inference_mode():
         for xb, yb in loader:
             prediction = model(xb.to(device)).argmax(dim=1).cpu().numpy()
             ys.extend(yb.numpy().tolist())
             preds.extend(prediction.tolist())
+
     return np.array(ys), np.array(preds)
+
+
+def balanced_class_weights(y: np.ndarray, classes: int) -> np.ndarray:
+    counts = np.bincount(y, minlength=classes).astype(np.float64)
+    if np.any(counts == 0):
+        missing = np.flatnonzero(counts == 0).tolist()
+        raise ValueError(f"Training split is missing class indices: {missing}")
+
+    return len(y) / (classes * counts)
 
 
 def main() -> None:
@@ -87,12 +98,14 @@ def main() -> None:
 
     if task != archive_task:
         raise SystemExit(
-            f"Requested task {task!r} does not match prepared archive task {archive_task!r}."
+            f"Requested task {task!r} does not match prepared archive task "
+            f"{archive_task!r}."
         )
 
     train_mask = split == 0
     val_mask = split == 1
     test_mask = split == 2
+
     if not train_mask.any() or not val_mask.any() or not test_mask.any():
         raise SystemExit("Train/validation/test participant splits are required.")
 
@@ -107,12 +120,19 @@ def main() -> None:
         classes=len(labels),
     ).to(device)
 
+    class_weights_np = balanced_class_weights(y[train_mask], len(labels))
+    class_weights = torch.tensor(
+        class_weights_np,
+        dtype=torch.float32,
+        device=device,
+    )
+
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=args.lr,
         weight_decay=1e-2,
     )
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
 
     best_val = -1.0
     best_epoch = 0
@@ -126,10 +146,12 @@ def main() -> None:
         for xb, yb in train_loader:
             xb = xb.to(device)
             yb = yb.to(device)
+
             optimizer.zero_grad(set_to_none=True)
             loss = criterion(model(xb), yb)
             loss.backward()
             optimizer.step()
+
             running_loss += float(loss.item()) * len(xb)
             seen += len(xb)
 
@@ -168,6 +190,10 @@ def main() -> None:
         "seed": args.seed,
         "best_epoch": best_epoch,
         "best_validation_balanced_accuracy": best_val,
+        "training_class_weights": {
+            label: float(class_weights_np[index])
+            for index, label in enumerate(labels)
+        },
         "test_accuracy": float(accuracy_score(test_y, test_pred)),
         "test_balanced_accuracy": float(
             balanced_accuracy_score(test_y, test_pred)
