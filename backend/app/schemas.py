@@ -32,6 +32,7 @@ class Prediction(BaseModel):
     source_dataset: str | None = None
     source_recording: str | None = None
     model_version: str | None = None
+    provenance_sha256: str | None = None
     message: str | None = None
 
 
@@ -43,6 +44,9 @@ class StatusResponse(BaseModel):
     prepared_path: str
     model_path: str
     state_model_path: str
+    prepared_provenance: str | None = None
+    model_provenance: str | None = None
+    state_model_provenance: str | None = None
     rule: str = (
         "No synthetic EEG or fabricated predictions."
     )
