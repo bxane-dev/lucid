@@ -3,11 +3,18 @@ import os
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT_DIR = BACKEND_DIR.parent
-DATASET_DIR = ROOT_DIR / "dataset"
+STORAGE_DIR = Path(
+    os.getenv(
+        "LUCID_STORAGE_DIR",
+        str(ROOT_DIR),
+    )
+).expanduser().resolve()
+
+DATASET_DIR = STORAGE_DIR / "dataset"
 PUBLIC_DATA_DIR = DATASET_DIR / "public"
 PREPARED_DATA_DIR = DATASET_DIR / "prepared"
-MODELS_DIR = ROOT_DIR / "models"
-RUNTIME_DIR = ROOT_DIR / "runtime"
+MODELS_DIR = STORAGE_DIR / "models"
+RUNTIME_DIR = STORAGE_DIR / "runtime"
 
 DEFAULT_DATASET_ID = os.getenv("LUCID_DATASET_ID", "nm000113")
 DEFAULT_DATASET_VERSION = os.getenv("LUCID_DATASET_VERSION", "v1.0.0")
