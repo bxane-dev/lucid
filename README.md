@@ -31,13 +31,13 @@ Nieto et al. Inner Speech dataset:
 - inner speech, pronounced speech, and visualized conditions
 - direction classes: Up, Down, Right, Left
 - published derivative EEG epochs
-- published derivative baseline/rest epochs
+- published resting baseline epochs
 - NEMAR DOI: `10.82901/nemar.on003626`
 - OpenNeuro DOI: `10.18112/openneuro.ds003626.v2.0.0`
 
-Lucid uses the published derivative event table to select condition `1` (inner speech), direction labels for the word model, and the matching published baseline epochs for the REST class. It does **not** manufacture rest windows.
+For REST-vs-IMAGINED-SPEECH, Lucid cuts non-overlapping 2-second windows from the actual published resting baseline recording. It does **not** duplicate baseline samples or manufacture rest windows.
 
-See [docs/DATASETS.md](docs/DATASETS.md).
+See [docs/DATASETS.md](docs/DATASETS.md) and [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
 ## Architecture
 
@@ -47,14 +47,14 @@ public EEG recordings
        v
 MNE loader
        |
-metadata-aware notch -> band-pass where applicable -> resample -> rejection -> normalization
+metadata-aware preprocessing -> 2 s windows -> normalization
        |
        v
 participant-held-out train / validation / test
        |
-       +------ EEGNet word classifier
+       +------ word classifier
        |
-       +------ EEGNet state classifier
+       +------ state classifier
        |
        v
 FastAPI + sample-by-sample WebSocket replay
@@ -116,6 +116,7 @@ python scripts/train.py ^
   --prepared ../dataset/prepared/on003626_words.npz ^
   --output ../models/eegnet_words.pt ^
   --task words ^
+  --architecture eegnet ^
   --epochs 25
 ```
 
@@ -126,12 +127,13 @@ python scripts/train.py ^
   --prepared ../dataset/prepared/on003626_state.npz ^
   --output ../models/eegnet_state.pt ^
   --task state ^
+  --architecture eegnet ^
   --epochs 25
 ```
 
 The commands above use Windows line continuation. On macOS/Linux replace `^` with `\`.
 
-To make the API replay the matching on003626 word archive, set:
+To make the API replay the matching `on003626` word archive, set:
 
 Windows PowerShell:
 
@@ -149,6 +151,29 @@ uvicorn app.main:app --reload
 
 When both trained checkpoints are compatible with the replay window, Lucid returns a model-derived state, state confidence, word prediction, and word confidence. The repository contains **no pre-filled result percentages**; metrics are written only after real training.
 
+## Model comparison
+
+Lucid includes six free local architectures:
+
+- EEGNet
+- 1D CNN
+- CNN + LSTM
+- Temporal CNN
+- Transformer
+- compact EEG-Conformer-style network
+
+Run all architectures against the **same** prepared public recording split:
+
+```bash
+python scripts/benchmark_models.py ^
+  --prepared ../dataset/prepared/on003626_words.npz ^
+  --epochs 15
+```
+
+The benchmark ranks architectures by **validation balanced accuracy**. Test metrics are reported but are not used to choose the winner.
+
+Use `--architectures eegnet cnn1d temporal_cnn` to benchmark a subset.
+
 ## Web UI
 
 ```bash
@@ -159,32 +184,25 @@ npm run dev
 
 Open <http://localhost:3000>.
 
-The interface shows:
-
-- real EEG replay traces;
-- source dataset and recording;
-- dataset ground-truth annotation;
-- neural word prediction;
-- neural state prediction when a compatible state model exists;
-- real model probabilities only after inference;
-- clear unavailable states before training.
+The interface shows real EEG replay traces, source recording provenance, dataset ground truth, word-model readiness, state-model readiness, neural predictions, and model probabilities. Nothing is filled in before the corresponding model actually exists.
 
 ## Evaluation
 
 The preparation code splits by participant, not by random trial. Subjects held out for validation and test are therefore unseen during training.
 
+Training uses inverse-frequency class weights calculated only from the training split. It does not synthesize or duplicate EEG for balancing.
+
 Each trained checkpoint stores:
 
-- source dataset ID;
-- task;
-- labels;
-- preprocessing metadata;
-- test accuracy;
-- balanced accuracy;
-- per-class precision/recall/F1;
-- confusion matrix.
+- source dataset ID
+- task and architecture
+- labels and preprocessing metadata
+- best validation balanced accuracy
+- test accuracy and test balanced accuracy
+- per-class precision/recall/F1
+- confusion matrix
 
-Metrics are also written beside the checkpoint as `*.metrics.json`.
+Metrics are written beside the checkpoint as `*.metrics.json`.
 
 ## Repository layout
 
@@ -192,9 +210,9 @@ Metrics are also written beside the checkpoint as `*.metrics.json`.
 backend/
   app/
     dataset.py          nm000113 BIDS preparation
-    inner_speech.py     on003626 derivative state + word preparation
+    inner_speech.py     on003626 real state + word preparation
     preprocess.py       signal preprocessing
-    model.py            EEGNet
+    model.py            six PyTorch EEG architectures
     inference.py        checkpoint-only inference
     replay.py           real public EEG replay
     main.py             FastAPI + WebSocket
@@ -203,6 +221,7 @@ backend/
     prepare_dataset.py
     prepare_inner_speech.py
     train.py
+    benchmark_models.py
     predict_recording.py
 frontend/
   app/                  Next.js Lucid dashboard
