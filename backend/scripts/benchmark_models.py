@@ -40,6 +40,12 @@ def main() -> None:
 
     archive = np.load(args.prepared, allow_pickle=False)
     dataset_id = str(archive["dataset_id"])
+    if "provenance_sha256" not in archive.files:
+        raise SystemExit(
+            "Prepared archive has no source provenance. "
+            "Re-run public-data preparation before benchmarking."
+        )
+    provenance_sha256 = str(archive["provenance_sha256"])
     task = str(archive["task"]) if "task" in archive.files else "words"
 
     output_dir = (
@@ -102,6 +108,7 @@ def main() -> None:
     report = {
         "dataset_id": dataset_id,
         "task": task,
+        "provenance_sha256": provenance_sha256,
         "seed": args.seed,
         "epochs": args.epochs,
         "ranking_metric": "validation_balanced_accuracy",
