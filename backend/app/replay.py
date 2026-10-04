@@ -24,6 +24,16 @@ class PublicEEGReplay:
     def ready(self) -> bool:
         return self.path.exists()
 
+    @property
+    def provenance_sha256(self) -> str | None:
+        if not self.path.exists():
+            return None
+        archive = self._load()
+        if "provenance_sha256" not in archive.files:
+            return None
+        value = str(archive["provenance_sha256"])
+        return value if len(value) == 64 else None
+
     def _load(self):
         if self._archive is None:
             if not self.path.exists():
