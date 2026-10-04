@@ -4,23 +4,31 @@
 
 Lucid is a constrained EEG classifier, not a private-thought decoder.
 
+## Public-recording rule
+
+No synthetic EEG is used for training, validation, testing, live replay, screenshots, or fallback predictions. Missing inputs produce an unavailable state.
+
+Dataset annotations are shown separately from neural-network output and never converted into model confidence.
+
 ## Preprocessing
 
-Default pipeline:
+For the `nm000113` BIDS word path:
 
-1. load the EEG recording with MNE-Python;
+1. load EEG with MNE-Python;
 2. keep EEG channels;
-3. apply a notch filter only when a power-line frequency is supplied by recording metadata or explicit configuration;
+3. apply a notch filter only when recording metadata or explicit configuration supplies the line frequency;
 4. band-pass 1–40 Hz;
-5. re-reference to the average EEG reference;
+5. average-reference;
 6. resample to 128 Hz;
-7. extract fixed-length windows from BIDS event annotations;
+7. extract fixed 2-second windows from BIDS task annotations;
 8. reject non-finite or extreme-amplitude windows;
-9. z-normalize every channel inside each trial.
+9. z-normalize each channel inside each trial.
 
-The default NEMAR `nm000113` description reports line-noise frequency as unspecified, so Lucid does not silently assume 50 Hz or 60 Hz for that dataset.
+The NEMAR `nm000113` description leaves line-noise frequency unspecified, so Lucid does not silently assume 50 Hz or 60 Hz.
 
-Lucid also does not automatically run ICA and claim that all artifacts were removed. ICA requires dataset-specific component review or reliable auxiliary-channel criteria. The first pipeline therefore uses conservative window rejection.
+For the Nieto `on003626` derivative path, Lucid reads the authors' published epoched EEG and resting baseline derivatives. Speech windows begin at task time zero. REST examples are non-overlapping 2-second cuts of the actual long baseline epoch recorded in each session. Lucid does not duplicate a baseline segment to create artificial REST trials.
+
+The first reproducible pipeline does not automatically run a new ICA stage on top of published derivatives and claim complete artifact removal.
 
 ## Evaluation
 
@@ -32,23 +40,20 @@ Lucid groups by participant before splitting:
 
 The split is deterministic from random seed 42.
 
-Metrics include:
+Architectures are selected using **validation balanced accuracy**. The test split is evaluated only after the best validation checkpoint is fixed. Model comparison reports test metrics for transparency but does not sort/select architectures using test performance.
 
-- accuracy;
-- balanced accuracy;
-- per-class precision, recall, and F1;
-- confusion matrix.
+When training classes are imbalanced, Lucid uses inverse-frequency cross-entropy weights computed from the training split. It does not invent, duplicate, or synthesize EEG to balance classes.
+
+Reported metrics include accuracy, balanced accuracy, per-class precision/recall/F1, and a confusion matrix.
 
 ## Live replay
 
-The WebSocket replay reads a prepared trial cut from a public recording, sends its samples in temporal order, and runs the locally trained model on that same recorded trial.
+The WebSocket replay reads a held-out prepared trial cut from a public recording, sends samples in temporal order, and runs locally trained checkpoints on that same real EEG window.
 
-The event annotation is sent separately as `ground_truth`.
+The source recording and dataset annotation are transmitted separately.
 
 ## State classification
 
-The default `nm000113` pipeline trains word classes. It does not have a separate validated REST-vs-IMAGINED-SPEECH state model in Lucid v0.1.
+The `nm000113` lightweight path supplies imagined-speech word labels but no validated REST class, so Lucid leaves state confidence unavailable there.
 
-Accordingly, `state_confidence` remains `null` unless a separately trained state model exists.
-
-This prevents a dataset annotation from being misrepresented as model certainty.
+The `on003626` state path uses the authors' published resting baseline recordings for REST and published inner-speech epochs for IMAGINED_SPEECH. A state value appears in the API only when a separately trained compatible state checkpoint actually produces it.
