@@ -5,19 +5,20 @@ import numpy as np
 import torch
 
 from .config import DEFAULT_MODEL_PATH
-from .model import EEGNet
+from .model import build_model
 from .schemas import Alternative, Prediction
 
 
 @dataclass
 class LoadedModel:
-    model: EEGNet
+    model: torch.nn.Module
     labels: list[str]
     channels: int
     samples: int
     dataset_id: str
     version: str
     task: str
+    architecture: str
     device: torch.device
 
 
@@ -26,7 +27,10 @@ class ClassResult:
     status: str
     label: str | None = None
     confidence: float | None = None
-    probabilities: list[tuple[str, float]] | None = None
+    probabilities: (
+        list[tuple[str, float]]
+        | None
+    ) = None
     message: str | None = None
 
 
@@ -35,7 +39,9 @@ class Predictor:
         self,
         model_path: Path = DEFAULT_MODEL_PATH,
     ) -> None:
-        self.model_path = Path(model_path)
+        self.model_path = Path(
+            model_path
+        )
         self.loaded: LoadedModel | None = None
         self.load_error: str | None = None
         self.reload()
@@ -50,7 +56,8 @@ class Predictor:
 
         if not self.model_path.exists():
             self.load_error = (
-                f"Model not found: {self.model_path}"
+                "Model not found: "
+                f"{self.model_path}"
             )
             return
 
@@ -65,14 +72,30 @@ class Predictor:
                 map_location=device,
                 weights_only=False,
             )
-            labels = list(checkpoint["labels"])
-            channels = int(checkpoint["channels"])
-            samples = int(checkpoint["samples"])
+            labels = list(
+                checkpoint["labels"]
+            )
+            channels = int(
+                checkpoint["channels"]
+            )
+            samples = int(
+                checkpoint["samples"]
+            )
             task = str(
-                checkpoint.get("task", "words")
+                checkpoint.get(
+                    "task",
+                    "words",
+                )
+            )
+            architecture = str(
+                checkpoint.get(
+                    "architecture",
+                    "eegnet",
+                )
             )
 
-            model = EEGNet(
+            model = build_model(
+                architecture,
                 channels=channels,
                 classes=len(labels),
             )
@@ -87,15 +110,21 @@ class Predictor:
                 channels=channels,
                 samples=samples,
                 dataset_id=str(
-                    checkpoint["dataset_id"]
+                    checkpoint[
+                        "dataset_id"
+                    ]
                 ),
                 version=str(
                     checkpoint.get(
                         "model_version",
-                        f"eegnet_{task}_v1",
+                        (
+                            f"{architecture}_"
+                            f"{task}_v1"
+                        ),
                     )
                 ),
                 task=task,
+                architecture=architecture,
                 device=device,
             )
         except Exception as exc:
@@ -107,10 +136,15 @@ class Predictor:
     ) -> ClassResult:
         if self.loaded is None:
             return ClassResult(
-                status="model_unavailable",
+                status=(
+                    "model_unavailable"
+                ),
                 message=(
                     self.load_error
-                    or "No trained model is loaded."
+                    or (
+                        "No trained model "
+                        "is loaded."
+                    )
                 ),
             )
 
@@ -127,9 +161,10 @@ class Predictor:
             return ClassResult(
                 status="error",
                 message=(
-                    f"Model expects "
+                    "Model expects "
                     f"{(loaded.channels, loaded.samples)}, "
-                    f"received {tuple(x.shape)}"
+                    "received "
+                    f"{tuple(x.shape)}"
                 ),
             )
 
@@ -142,19 +177,27 @@ class Predictor:
         with torch.inference_mode():
             probs = (
                 torch.softmax(
-                    loaded.model(tensor),
+                    loaded.model(
+                        tensor
+                    ),
                     dim=1,
                 )[0]
                 .cpu()
                 .numpy()
             )
 
-        order = np.argsort(probs)[::-1]
+        order = np.argsort(
+            probs
+        )[::-1]
         best = int(order[0])
         probabilities = [
             (
-                loaded.labels[int(index)],
-                float(probs[int(index)]),
+                loaded.labels[
+                    int(index)
+                ],
+                float(
+                    probs[int(index)]
+                ),
             )
             for index in order
         ]
@@ -162,17 +205,25 @@ class Predictor:
         return ClassResult(
             status="ok",
             label=loaded.labels[best],
-            confidence=float(probs[best]),
-            probabilities=probabilities,
+            confidence=float(
+                probs[best]
+            ),
+            probabilities=(
+                probabilities
+            ),
         )
 
     def predict(
         self,
         window: np.ndarray,
         *,
-        source_recording: str | None = None,
+        source_recording: (
+            str | None
+        ) = None,
     ) -> Prediction:
-        result = self.classify(window)
+        result = self.classify(
+            window
+        )
 
         if result.status != "ok":
             return Prediction(
@@ -192,7 +243,8 @@ class Predictor:
 
         assert self.loaded is not None
         probabilities = (
-            result.probabilities or []
+            result.probabilities
+            or []
         )
         alternatives = [
             Alternative(
@@ -213,6 +265,10 @@ class Predictor:
             source_dataset=(
                 self.loaded.dataset_id
             ),
-            source_recording=source_recording,
-            model_version=self.loaded.version,
+            source_recording=(
+                source_recording
+            ),
+            model_version=(
+                self.loaded.version
+            ),
         )
