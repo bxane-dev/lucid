@@ -6,6 +6,7 @@ import pandas as pd
 
 from .dataset import subject_group_split
 from .preprocess import DEFAULT_PREPROCESS, normalize_trial
+from .provenance import build_source_manifest, write_manifest
 
 
 DIRECTION_LABELS = {
@@ -133,6 +134,7 @@ def prepare_nieto_derivatives(
     state_recordings: list[str] = []
 
     expected_shape: tuple[int, int] | None = None
+    provenance_sources: list[Path] = []
 
     for eeg_path in eeg_files:
         prefix = eeg_path.name.replace("_eeg-epo.fif", "")
@@ -184,6 +186,9 @@ def prepare_nieto_derivatives(
         if not mask.any():
             continue
 
+        provenance_sources.extend(
+            [eeg_path, baseline_path, events_path]
+        )
         subject = _subject_from_derivative(eeg_path)
         inner_eeg = eeg[mask]
         inner_direction = direction[mask]
@@ -214,6 +219,13 @@ def prepare_nieto_derivatives(
 
     if not word_x or not state_x:
         raise RuntimeError("No inner-speech derivative trials were prepared.")
+
+    manifest = build_source_manifest(
+        provenance_sources,
+        dataset_id="on003626",
+        dataset_root=dataset_root,
+    )
+    provenance_sha256 = manifest["manifest_sha256"]
 
     def save_archive(
         x_list,
@@ -246,12 +258,20 @@ def prepare_nieto_derivatives(
             labels=np.array(labels, dtype="U64"),
             dataset_id=np.array("on003626"),
             task=np.array(task),
+            provenance_sha256=np.array(
+                provenance_sha256,
+                dtype="U64",
+            ),
             sfreq=np.array(
                 DEFAULT_PREPROCESS.target_sfreq,
                 dtype=np.float32,
             ),
         )
 
+        manifest_path = write_manifest(
+            manifest,
+            output,
+        )
         counts = {
             label: int((y == index).sum())
             for index, label in enumerate(labels)
@@ -269,6 +289,8 @@ def prepare_nieto_derivatives(
             "val_trials": int((split == 1).sum()),
             "test_trials": int((split == 2).sum()),
             "output": str(output),
+            "provenance_sha256": provenance_sha256,
+            "manifest": str(manifest_path),
         }
 
     return {
