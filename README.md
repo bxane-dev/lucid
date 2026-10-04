@@ -1,88 +1,158 @@
 # Lucid
 
-Lucid is a zero-cost EEG research prototype for classifying limited brain states and EEG-derived intents from public or locally recorded datasets.
+Lucid is a zero-cost EEG research prototype for classifying limited brain states and imagined-speech commands from **real public EEG recordings**.
 
-> Lucid is **not** a mind-reading system. Predictions are statistical classifications from EEG recordings and must not be presented as literal private thoughts.
+Lucid never fabricates EEG, confidence scores, predictions, or model results. If public EEG has not been downloaded, prepared, and a model has not been trained, the API and UI report that the model/data are unavailable.
 
-## First milestone
+> Lucid is not a mind-reading system. It performs statistical classification of constrained EEG tasks from research datasets. A language model must never be presented as having decoded content that the EEG model did not predict.
 
-```json
-{
-  "state": "imagined_speech",
-  "confidence": 0.91,
-  "prediction": "yes",
-  "prediction_confidence": 0.74
-}
-```
+## Default public dataset
 
-## Stack
+The first supported source is NEMAR `nm000113`, the BIDS conversion of the 2020 BCI Competition Track 3 imagined-speech dataset.
 
-- Python, PyTorch, MNE-Python, NumPy, SciPy, scikit-learn
-- FastAPI + WebSockets
-- Next.js + React
-- SQLite
-- Local development / free Colab or Kaggle training
+- 15 participants
+- 64 EEG channels
+- 256 Hz
+- five recorded imagined-speech tasks: `Hello`, `Help me`, `Stop`, `Thank you`, `Yes`
+- about 585 MB
+- CC-BY-4.0
+- DOI: `10.82901/nemar.nm000113`
+
+A second, larger source is NEMAR/OpenNeuro `on003626` / `ds003626`, the Nieto et al. Inner Speech dataset. It has 10 participants, 136 channels, four directional command classes and three paradigms. It is optional because the full dataset is about 24.6 GB.
+
+See [docs/DATASETS.md](docs/DATASETS.md).
 
 ## Architecture
 
 ```text
-EEG file -> preprocessing -> windowing -> model -> FastAPI
-                                         |
-                                         +-> WebSocket simulated live stream -> Next.js UI
+public BIDS EEG
+      |
+      v
+MNE loader
+      |
+notch -> 1-40 Hz band-pass -> resample -> window rejection -> per-channel normalization
+      |
+      v
+subject-held-out train / validation / test split
+      |
+      v
+EEGNet (PyTorch)
+      |
+      +----> JSON prediction
+      |
+      +----> FastAPI WebSocket
+                 |
+                 v
+          Next.js dashboard
 ```
 
-## Repository
+The live simulator replays samples from a real downloaded EEG trial one sample at a time. Ground-truth annotations are displayed separately from neural-network output.
 
-- `backend/` preprocessing, EEGNet, training, inference, SQLite and streaming API
-- `frontend/` live Lucid dashboard
-- `dataset/` common local dataset format
-- `models/` locally trained model artifacts
-- `docs/` research and dataset notes
+## Run locally
 
-## Quick start
-
-### Backend
+### 1. Backend
 
 ```bash
 cd backend
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
+# Windows
+.venv\Scripts\activate
+# macOS/Linux
+# source .venv/bin/activate
+
 pip install -r requirements.txt
-python scripts/generate_demo_data.py
+```
+
+### 2. Download public EEG
+
+Download the default dataset from NEMAR:
+
+```bash
+python scripts/download_nemar.py --dataset nm000113 --subjects all
+```
+
+For a smaller pipeline check using one real participant:
+
+```bash
+python scripts/download_nemar.py --dataset nm000113 --subjects sub-01
+```
+
+No generated or synthetic EEG is used.
+
+### 3. Prepare windows
+
+```bash
+python scripts/prepare_dataset.py --dataset nm000113
+```
+
+This creates a local prepared file under `dataset/prepared/`. Raw public EEG remains under `dataset/public/`. Both directories are gitignored because the research recordings are much larger than source code.
+
+### 4. Train
+
+```bash
+python scripts/train.py --epochs 25
+```
+
+The default split holds out entire participants for validation and test. This is intentionally stricter than randomly splitting trials from the same person.
+
+### 5. API
+
+```bash
 uvicorn app.main:app --reload
 ```
 
-Backend: http://localhost:8000
+Open <http://localhost:8000/api/status> to see whether real data and a trained model are available.
 
-### Frontend
+### 6. Web UI
 
 ```bash
-cd frontend
+cd ../frontend
 npm install
 npm run dev
 ```
 
-Frontend: http://localhost:3000
+Open <http://localhost:3000>.
 
-The UI connects to `ws://localhost:8000/ws/live` by default.
+## API result
 
-## Dataset format
+When a trained model exists, a replay prediction has this shape:
 
-```text
-dataset/
-  subject_01/
-    eeg.npy
-    labels.json
+```json
+{
+  "status": "ok",
+  "state": "imagined_speech",
+  "state_confidence": null,
+  "prediction": "yes",
+  "prediction_confidence": 0.74,
+  "alternatives": [
+    {"label": "stop", "confidence": 0.11}
+  ],
+  "source_dataset": "nm000113",
+  "model_version": "eegnet_words_v1"
+}
 ```
 
-`eeg.npy` is shaped `[channels, samples]`. `labels.json` stores sampling frequency, channel names, and labeled time segments.
+`state_confidence` remains `null` until a separately trained state model exists. Lucid does not turn the dataset annotation into a fake model confidence.
 
-## Research order
+## Repository layout
 
-1. REST vs imagined speech
-2. Small fixed vocabulary such as YES / NO / LEFT / RIGHT / STOP / GO
-3. Session-independent evaluation
-4. Broader intent classes only after earlier stages are reliable
+```text
+backend/
+  app/                 FastAPI, preprocessing, model, inference, streaming
+  scripts/             download, prepare, train, predict
+frontend/
+  app/                 Next.js dashboard
+docs/
+  DATASETS.md           provenance and licenses
+  METHODOLOGY.md        evaluation rules and limitations
+dataset/                local only; public EEG downloads are not committed
+models/                 local model checkpoints; not committed
+```
 
-No paid API, cloud database, GPU, server, or EEG headset is required for the first prototype.
+## Zero-cost rule
+
+The prototype requires no paid API, server, GPU, cloud database, commercial dataset, or EEG headset. CPU training works locally; Colab/Kaggle free compute may be used later.
+
+## License
+
+Lucid source code is MIT licensed. Public EEG keeps its original dataset license and attribution requirements.
