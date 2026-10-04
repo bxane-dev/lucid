@@ -83,6 +83,7 @@ jobs:
           assert source_manifest["manifest_sha256"] == source_hash
           assert report["dataset_id"] == "nm000113"
           assert report["task"] == "words"
+          assert report["provenance_sha256"] == source_hash
           assert report["ranking_metric"] == "validation_balanced_accuracy"
           assert len(report["results"]) == 6
 
