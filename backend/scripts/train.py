@@ -33,16 +33,23 @@ from app.config import (
     DEFAULT_MODEL_PATH,
     DEFAULT_PREPARED_PATH,
 )
-from app.model import EEGNet
+from app.model import (
+    ARCHITECTURES,
+    build_model,
+)
 
 
-def seed_everything(seed: int) -> None:
+def seed_everything(
+    seed: int,
+) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
 
     if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+        torch.cuda.manual_seed_all(
+            seed
+        )
 
 
 def loader_for(
@@ -112,13 +119,16 @@ def main() -> None:
     )
     parser.add_argument(
         "--task",
-        choices=["words", "state"],
+        choices=[
+            "words",
+            "state",
+        ],
         default=None,
-        help=(
-            "Optional explicit task. If omitted, "
-            "the prepared archive task field is "
-            "used, falling back to words."
-        ),
+    )
+    parser.add_argument(
+        "--architecture",
+        choices=ARCHITECTURES,
+        default="eegnet",
     )
     parser.add_argument(
         "--epochs",
@@ -142,24 +152,33 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    seed_everything(args.seed)
+    seed_everything(
+        args.seed
+    )
 
     if not args.prepared.exists():
         raise SystemExit(
-            "Prepared public EEG not found: "
-            f"{args.prepared}. Run the "
-            "documented public-data preparation "
-            "first."
+            "Prepared public EEG "
+            "not found: "
+            f"{args.prepared}. "
+            "Run the documented "
+            "public-data preparation first."
         )
 
     archive = np.load(
         args.prepared,
         allow_pickle=False,
     )
-    x = archive["x"].astype(np.float32)
-    y = archive["y"].astype(np.int64)
+    x = archive["x"].astype(
+        np.float32
+    )
+    y = archive["y"].astype(
+        np.int64
+    )
     split = archive["split"]
-    labels = archive["labels"].tolist()
+    labels = archive[
+        "labels"
+    ].tolist()
     dataset_id = str(
         archive["dataset_id"]
     )
@@ -168,12 +187,16 @@ def main() -> None:
         if "task" in archive.files
         else "words"
     )
-    task = args.task or archive_task
+    task = (
+        args.task
+        or archive_task
+    )
 
     if task != archive_task:
         raise SystemExit(
-            f"Requested task {task!r} does "
-            f"not match prepared archive "
+            "Requested task "
+            f"{task!r} does not "
+            "match prepared archive "
             f"task {archive_task!r}."
         )
 
@@ -187,8 +210,9 @@ def main() -> None:
         or not test_mask.any()
     ):
         raise SystemExit(
-            "Train/validation/test participant "
-            "splits are required."
+            "Train/validation/test "
+            "participant splits "
+            "are required."
         )
 
     train_loader = loader_for(
@@ -218,7 +242,8 @@ def main() -> None:
         if torch.cuda.is_available()
         else "cpu"
     )
-    model = EEGNet(
+    model = build_model(
+        args.architecture,
         channels=x.shape[1],
         classes=len(labels),
     ).to(device)
@@ -228,7 +253,9 @@ def main() -> None:
         lr=args.lr,
         weight_decay=1e-2,
     )
-    criterion = nn.CrossEntropyLoss()
+    criterion = (
+        nn.CrossEntropyLoss()
+    )
 
     best_val = -1.0
     best_state = None
@@ -261,10 +288,12 @@ def main() -> None:
             )
             seen += len(xb)
 
-        val_y, val_pred = evaluate(
-            model,
-            val_loader,
-            device,
+        val_y, val_pred = (
+            evaluate(
+                model,
+                val_loader,
+                device,
+            )
         )
         val_balanced_accuracy = (
             balanced_accuracy_score(
@@ -274,6 +303,8 @@ def main() -> None:
         )
 
         print(
+            f"architecture="
+            f"{args.architecture} "
             f"epoch={epoch:03d} "
             f"loss="
             f"{running_loss / max(seen, 1):.4f} "
@@ -318,6 +349,9 @@ def main() -> None:
     metrics = {
         "dataset_id": dataset_id,
         "task": task,
+        "architecture": (
+            args.architecture
+        ),
         "split": (
             "participant-held-out"
         ),
@@ -339,7 +373,9 @@ def main() -> None:
                 test_y,
                 test_pred,
                 labels=list(
-                    range(len(labels))
+                    range(
+                        len(labels)
+                    )
                 ),
                 target_names=labels,
                 zero_division=0,
@@ -351,7 +387,9 @@ def main() -> None:
                 test_y,
                 test_pred,
                 labels=list(
-                    range(len(labels))
+                    range(
+                        len(labels)
+                    )
                 ),
             ).tolist()
         ),
@@ -363,7 +401,8 @@ def main() -> None:
         exist_ok=True,
     )
     model_version = (
-        f"eegnet_{task}_v1"
+        f"{args.architecture}_"
+        f"{task}_v1"
     )
 
     torch.save(
@@ -376,16 +415,21 @@ def main() -> None:
             "samples": int(
                 x.shape[2]
             ),
-            "dataset_id": dataset_id,
+            "dataset_id": (
+                dataset_id
+            ),
             "task": task,
+            "architecture": (
+                args.architecture
+            ),
             "model_version": (
                 model_version
             ),
             "preprocessing": {
                 "target_sfreq": 128.0,
                 "normalization": (
-                    "per-trial per-channel "
-                    "z-score"
+                    "per-trial "
+                    "per-channel z-score"
                 ),
             },
             "metrics": metrics,
