@@ -1,0 +1,130 @@
+name: full-public-benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: "Training epochs per architecture"
+        required: true
+        default: "10"
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      EPOCHS: ${{ inputs.epochs }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: python -m pip install -r requirements.txt
+
+      - name: Download all real nm000113 participants
+        working-directory: backend
+        run: >
+          python scripts/download_nemar.py
+          --dataset nm000113
+          --subjects all
+
+      - name: Prepare subject-held-out public EEG archive
+        working-directory: backend
+        run: python scripts/prepare_dataset.py --dataset nm000113
+
+      - name: Benchmark all local model architectures
+        working-directory: backend
+        run: >
+          python scripts/benchmark_models.py
+          --prepared ../dataset/prepared/nm000113_words.npz
+          --epochs "$EPOCHS"
+          --batch-size 32
+          --seed 42
+          --architectures
+          eegnet
+          cnn1d
+          cnn_lstm
+          temporal_cnn
+          transformer
+          eeg_conformer
+
+      - name: Verify benchmark provenance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          import numpy as np
+
+          prepared = Path("dataset/prepared/nm000113_words.npz")
+          manifest = Path(
+              "dataset/prepared/nm000113_words.npz.manifest.json"
+          )
+          benchmark = Path(
+              "models/benchmarks/nm000113/words/benchmark.json"
+          )
+
+          assert prepared.exists()
+          assert manifest.exists()
+          assert benchmark.exists()
+
+          data = np.load(prepared, allow_pickle=False)
+          source_hash = str(data["provenance_sha256"])
+          source_manifest = json.loads(manifest.read_text())
+          report = json.loads(benchmark.read_text())
+
+          assert source_manifest["manifest_sha256"] == source_hash
+          assert report["dataset_id"] == "nm000113"
+          assert report["task"] == "words"
+          assert report["ranking_metric"] == "validation_balanced_accuracy"
+          assert len(report["results"]) == 6
+
+          for result in report["results"]:
+              metrics = Path(result["model_path"]).with_suffix(
+                  ".metrics.json"
+              )
+              payload = json.loads(metrics.read_text())
+              assert payload["provenance_sha256"] == source_hash
+
+          print(
+              json.dumps(
+                  {
+                      "source_provenance_sha256": source_hash,
+                      "subjects": sorted(
+                          set(data["groups"].tolist())
+                      ),
+                      "trials": int(len(data["x"])),
+                      "ranking": [
+                          {
+                              "architecture": item["architecture"],
+                              "validation_balanced_accuracy": item[
+                                  "validation_balanced_accuracy"
+                              ],
+                              "test_balanced_accuracy": item[
+                                  "test_balanced_accuracy"
+                              ],
+                          }
+                          for item in report["results"]
+                      ],
+                  },
+                  indent=2,
+              )
+          )
+          PY
+
+      - name: Upload benchmark evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: lucid-nm000113-benchmark
+          path: |
+            dataset/prepared/nm000113_words.npz.manifest.json
+            models/benchmarks/nm000113/words/benchmark.json
+            models/benchmarks/nm000113/words/*.metrics.json
+          if-no-files-found: error
