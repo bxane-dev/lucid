@@ -123,3 +123,27 @@ footer a:hover { color: #fff; }
   .signalPanel { padding: 14px; }
   footer { flex-direction: column; }
 }
+
+
+.provenanceLine {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 16px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: #7f8a82;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.provenanceLine strong {
+  color: #dfe8e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0;
+}
+
+.provenanceLine span:last-child {
+  margin-left: auto;
+  color: #9cffbf;
+}
