@@ -186,6 +186,27 @@ Open <http://localhost:3000>.
 
 The interface shows real EEG replay traces, source recording provenance, dataset ground truth, word-model readiness, state-model readiness, neural predictions, and model probabilities. Nothing is filled in before the corresponding model actually exists.
 
+## Provenance and anti-fabrication checks
+
+Every prepared archive now gets a sidecar manifest such as:
+
+```text
+dataset/prepared/nm000113_words.npz
+dataset/prepared/nm000113_words.npz.manifest.json
+```
+
+The manifest contains the SHA-256 and byte size of every public EEG/event
+source file used to build the archive. The manifest itself has a deterministic
+SHA-256 identifier. That identifier is embedded into the prepared archive,
+the trained checkpoint, the metrics JSON, API responses, and the live replay.
+
+Lucid refuses to load legacy checkpoints without provenance and refuses to
+score a replay when the checkpoint hash does not match the prepared EEG hash.
+
+The dashboard shows the abbreviated source SHA-256 and whether the loaded
+word model matches it. The real-data GitHub Actions smoke test independently
+checks the manifest -> prepared archive -> checkpoint -> metrics chain.
+
 ## Evaluation
 
 The preparation code splits by participant, not by random trial. Subjects held out for validation and test are therefore unseen during training.
