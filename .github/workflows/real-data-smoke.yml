@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - ".github/workflows/real-data-smoke.yml"
+      - "backend/app/**"
+      - "backend/scripts/**"
 
 jobs:
   public-eeg-smoke:
@@ -26,47 +28,80 @@ jobs:
 
       - name: Download three real NEMAR participants
         working-directory: backend
-        run: |
-          python scripts/download_nemar.py             --dataset nm000113             --subjects sub-01,sub-02,sub-03
+        run: >
+          python scripts/download_nemar.py
+          --dataset nm000113
+          --subjects sub-01,sub-02,sub-03
 
-      - name: Prepare public EEG windows
+      - name: Prepare public EEG windows and provenance
         working-directory: backend
         run: python scripts/prepare_dataset.py --dataset nm000113
 
       - name: Train one real-data EEGNet epoch
         working-directory: backend
-        run: |
-          python scripts/train.py             --prepared ../dataset/prepared/nm000113_words.npz             --output ../models/eegnet_words.pt             --task words             --architecture eegnet             --epochs 1             --batch-size 32
+        run: >
+          python scripts/train.py
+          --prepared ../dataset/prepared/nm000113_words.npz
+          --output ../models/eegnet_words.pt
+          --task words
+          --architecture eegnet
+          --epochs 1
+          --batch-size 32
 
-      - name: Verify real-data outputs
+      - name: Verify real-data provenance and outputs
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
+
           import numpy as np
+          import torch
 
           prepared = Path("dataset/prepared/nm000113_words.npz")
+          manifest = Path(
+              "dataset/prepared/nm000113_words.npz.manifest.json"
+          )
           model = Path("models/eegnet_words.pt")
           metrics = Path("models/eegnet_words.metrics.json")
 
           assert prepared.exists(), "prepared public EEG archive missing"
+          assert manifest.exists(), "source provenance manifest missing"
           assert model.exists(), "trained checkpoint missing"
           assert metrics.exists(), "metrics file missing"
 
           data = np.load(prepared, allow_pickle=False)
           subjects = set(data["groups"].tolist())
           split = data["split"]
+          provenance = str(data["provenance_sha256"])
 
           assert subjects == {"sub-01", "sub-02", "sub-03"}
           assert set(split.tolist()) == {0, 1, 2}
+          assert len(provenance) == 64
           assert len(set(data["groups"][split == 0].tolist())) == 1
           assert len(set(data["groups"][split == 1].tolist())) == 1
           assert len(set(data["groups"][split == 2].tolist())) == 1
 
+          source_manifest = json.loads(manifest.read_text())
+          assert source_manifest["dataset_id"] == "nm000113"
+          assert source_manifest["manifest_sha256"] == provenance
+          assert source_manifest["files"]
+          assert all(
+              len(item["sha256"]) == 64
+              and item["bytes"] > 0
+              for item in source_manifest["files"]
+          )
+
           report = json.loads(metrics.read_text())
+          checkpoint = torch.load(
+              model,
+              map_location="cpu",
+              weights_only=False,
+          )
           assert report["dataset_id"] == "nm000113"
           assert report["architecture"] == "eegnet"
           assert report["task"] == "words"
+          assert report["provenance_sha256"] == provenance
+          assert checkpoint["provenance_sha256"] == provenance
           assert 0.0 <= report["test_balanced_accuracy"] <= 1.0
 
           print(
@@ -75,6 +110,8 @@ jobs:
                       "subjects": sorted(subjects),
                       "trials": int(len(data["x"])),
                       "labels": data["labels"].tolist(),
+                      "provenance_sha256": provenance,
+                      "source_files": len(source_manifest["files"]),
                       "best_validation_balanced_accuracy": report[
                           "best_validation_balanced_accuracy"
                       ],
@@ -86,3 +123,12 @@ jobs:
               )
           )
           PY
+
+      - name: Upload non-EEG validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lucid-real-data-validation
+          path: |
+            dataset/prepared/nm000113_words.npz.manifest.json
+            models/eegnet_words.metrics.json
+          if-no-files-found: error
