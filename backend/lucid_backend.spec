@@ -8,7 +8,7 @@ from PyInstaller.utils.hooks import (
     collect_submodules,
 )
 
-ROOT = Path(SPECPATH).parent.parent
+ROOT = Path(SPECPATH).parent
 FRONTEND = ROOT / "frontend" / "out"
 
 datas = [(str(FRONTEND), "frontend")]
