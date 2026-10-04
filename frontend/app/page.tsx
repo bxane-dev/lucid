@@ -14,6 +14,7 @@ type Prediction = {
   source_dataset: string | null;
   source_recording: string | null;
   model_version: string | null;
+  provenance_sha256: string | null;
   message: string | null;
 };
 
@@ -25,6 +26,9 @@ type ApiStatus = {
   prepared_path: string;
   model_path: string;
   state_model_path: string;
+  prepared_provenance: string | null;
+  model_provenance: string | null;
+  state_model_provenance: string | null;
   rule: string;
 };
 
@@ -34,6 +38,11 @@ const MAX_POINTS = 180;
 
 function pct(value: number | null | undefined) {
   return value == null ? "—" : `${(value * 100).toFixed(1)}%`;
+}
+
+function shortHash(value: string | null | undefined) {
+  if (!value) return "—";
+  return `${value.slice(0, 12)}…${value.slice(-8)}`;
 }
 
 function titleCase(value: string | null | undefined) {
@@ -100,6 +109,7 @@ export default function Home() {
   const [visibleChannels, setVisibleChannels] = useState(0);
   const [dataset, setDataset] = useState("nm000113");
   const [recording, setRecording] = useState<string | null>(null);
+  const [provenance, setProvenance] = useState<string | null>(null);
   const [groundTruth, setGroundTruth] = useState<string | null>(null);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -138,6 +148,7 @@ export default function Home() {
           setPrediction(null);
           setDataset(message.dataset);
           setRecording(message.recording);
+          setProvenance(message.provenance_sha256 ?? null);
           setGroundTruth(message.ground_truth);
           setVisibleChannels(Math.min(8, message.channels));
           return;
@@ -254,6 +265,17 @@ export default function Home() {
           {recording
             ? recording.split(/[\\/]/).slice(-3).join(" / ")
             : "No recording loaded"}
+        </div>
+        <div className="provenanceLine" title={provenance ?? ""}>
+          <span>SOURCE SHA-256</span>
+          <strong>{shortHash(provenance)}</strong>
+          <span>
+            {status?.model_provenance && provenance
+              ? status.model_provenance === provenance
+                ? "MODEL MATCH"
+                : "MODEL MISMATCH"
+              : "MODEL NOT VERIFIED"}
+          </span>
         </div>
       </section>
 
