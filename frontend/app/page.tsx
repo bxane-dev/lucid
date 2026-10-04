@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Alternative = { label: string; confidence: number };
+
 type Prediction = {
   status: "ok" | "model_unavailable" | "data_unavailable" | "error";
   state: string | null;
@@ -19,9 +20,11 @@ type Prediction = {
 type ApiStatus = {
   data_ready: boolean;
   model_ready: boolean;
+  state_model_ready: boolean;
   dataset_id: string;
   prepared_path: string;
   model_path: string;
+  state_model_path: string;
   rule: string;
 };
 
@@ -38,22 +41,33 @@ function titleCase(value: string | null | undefined) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-function Signal({ points, channels }: { points: number[][]; channels: number }) {
+function Signal({
+  points,
+  channels,
+}: {
+  points: number[][];
+  channels: number;
+}) {
   const width = 1000;
   const height = 280;
+
   const paths = useMemo(() => {
     if (!points.length || !channels) return [];
     const n = points.length;
+
     return Array.from({ length: channels }, (_, channel) => {
-      const values = points.map((p) => p[channel] ?? 0);
+      const values = points.map((point) => point[channel] ?? 0);
       const maxAbs = Math.max(...values.map(Math.abs), 1e-4);
       const lane = height / channels;
       const mid = lane * (channel + 0.5);
-      return values.map((v, i) => {
-        const x = n === 1 ? 0 : (i / (n - 1)) * width;
-        const y = mid - (v / maxAbs) * lane * 0.32;
-        return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-      }).join(" ");
+
+      return values
+        .map((value, index) => {
+          const x = n === 1 ? 0 : (index / (n - 1)) * width;
+          const y = mid - (value / maxAbs) * lane * 0.32;
+          return `${index === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+        })
+        .join(" ");
     });
   }, [points, channels]);
 
@@ -61,18 +75,27 @@ function Signal({ points, channels }: { points: number[][]; channels: number }) 
     <div className="signalFrame">
       <div className="signalGrid" />
       <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-        {paths.map((path, i) => (
-          <path key={i} d={path} className="trace" opacity={0.45 + i * 0.06} />
+        {paths.map((path, index) => (
+          <path
+            key={index}
+            d={path}
+            className="trace"
+            opacity={0.45 + index * 0.06}
+          />
         ))}
       </svg>
-      {!points.length && <div className="emptyOverlay">Waiting for recorded EEG samples…</div>}
+      {!points.length && (
+        <div className="emptyOverlay">Waiting for recorded EEG samples…</div>
+      )}
     </div>
   );
 }
 
 export default function Home() {
   const [status, setStatus] = useState<ApiStatus | null>(null);
-  const [connection, setConnection] = useState<"connecting" | "live" | "offline">("connecting");
+  const [connection, setConnection] = useState<
+    "connecting" | "live" | "offline"
+  >("connecting");
   const [points, setPoints] = useState<number[][]>([]);
   const [visibleChannels, setVisibleChannels] = useState(0);
   const [dataset, setDataset] = useState("nm000113");
@@ -84,7 +107,7 @@ export default function Home() {
 
   useEffect(() => {
     fetch(`${API}/api/status`)
-      .then((r) => r.json())
+      .then((response) => response.json())
       .then(setStatus)
       .catch(() => setStatus(null));
 
@@ -93,6 +116,7 @@ export default function Home() {
 
     const connect = () => {
       if (closed) return;
+
       setConnection("connecting");
       socket = new WebSocket(WS);
 
@@ -102,40 +126,44 @@ export default function Home() {
       };
 
       socket.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
+        const message = JSON.parse(event.data);
 
-        if (msg.type === "error") {
-          setStreamError(msg.message);
+        if (message.type === "error") {
+          setStreamError(message.message);
           return;
         }
 
-        if (msg.type === "trial_start") {
+        if (message.type === "trial_start") {
           setPoints([]);
           setPrediction(null);
-          setDataset(msg.dataset);
-          setRecording(msg.recording);
-          setGroundTruth(msg.ground_truth);
-          setVisibleChannels(Math.min(8, msg.channels));
+          setDataset(message.dataset);
+          setRecording(message.recording);
+          setGroundTruth(message.ground_truth);
+          setVisibleChannels(Math.min(8, message.channels));
           return;
         }
 
-        if (msg.type === "sample") {
+        if (message.type === "sample") {
           setPoints((previous) => {
-            const next = [...previous, msg.values];
-            return next.length > MAX_POINTS ? next.slice(-MAX_POINTS) : next;
+            const next = [...previous, message.values];
+            return next.length > MAX_POINTS
+              ? next.slice(-MAX_POINTS)
+              : next;
           });
           return;
         }
 
-        if (msg.type === "prediction") {
-          setPrediction(msg.prediction);
-          setGroundTruth(msg.ground_truth);
+        if (message.type === "prediction") {
+          setPrediction(message.prediction);
+          setGroundTruth(message.ground_truth);
         }
       };
 
       socket.onclose = () => {
         setConnection("offline");
-        if (!closed) reconnectRef.current = window.setTimeout(connect, 2500);
+        if (!closed) {
+          reconnectRef.current = window.setTimeout(connect, 2500);
+        }
       };
 
       socket.onerror = () => setConnection("offline");
@@ -145,12 +173,15 @@ export default function Home() {
 
     return () => {
       closed = true;
-      if (reconnectRef.current) window.clearTimeout(reconnectRef.current);
+      if (reconnectRef.current) {
+        window.clearTimeout(reconnectRef.current);
+      }
       socket?.close();
     };
   }, []);
 
-  const modelReady = status?.model_ready ?? false;
+  const wordModelReady = status?.model_ready ?? false;
+  const stateModelReady = status?.state_model_ready ?? false;
   const dataReady = status?.data_ready ?? false;
 
   return (
@@ -172,12 +203,30 @@ export default function Home() {
       <section className="hero">
         <div>
           <p className="eyebrow">ZERO-COST NEURAL DECODING RESEARCH</p>
-          <h2>Recorded brain signals.<br />No fabricated output.</h2>
+          <h2>
+            Recorded brain signals.
+            <br />
+            No fabricated output.
+          </h2>
         </div>
+
         <div className="statusRail">
-          <div className="statusItem"><span>PUBLIC DATA</span><strong>{dataReady ? "READY" : "MISSING"}</strong></div>
-          <div className="statusItem"><span>MODEL</span><strong>{modelReady ? "TRAINED" : "NOT TRAINED"}</strong></div>
-          <div className="statusItem"><span>DATASET</span><strong>{dataset}</strong></div>
+          <div className="statusItem">
+            <span>PUBLIC DATA</span>
+            <strong>{dataReady ? "READY" : "MISSING"}</strong>
+          </div>
+          <div className="statusItem">
+            <span>WORD MODEL</span>
+            <strong>{wordModelReady ? "TRAINED" : "NOT TRAINED"}</strong>
+          </div>
+          <div className="statusItem">
+            <span>STATE MODEL</span>
+            <strong>{stateModelReady ? "TRAINED" : "NOT TRAINED"}</strong>
+          </div>
+          <div className="statusItem">
+            <span>DATASET</span>
+            <strong>{dataset}</strong>
+          </div>
         </div>
       </section>
 
@@ -190,12 +239,21 @@ export default function Home() {
 
       <section className="panel signalPanel">
         <div className="panelHead">
-          <div><span className="label">SIGNAL</span><h3>Live replay</h3></div>
-          <div className="sourceTag">REAL RECORDED EEG · {visibleChannels || "—"} CH SHOWN</div>
+          <div>
+            <span className="label">SIGNAL</span>
+            <h3>Live replay</h3>
+          </div>
+          <div className="sourceTag">
+            REAL RECORDED EEG · {visibleChannels || "—"} CH SHOWN
+          </div>
         </div>
+
         <Signal points={points} channels={visibleChannels} />
+
         <div className="recordingPath" title={recording ?? ""}>
-          {recording ? recording.split(/[\\/]/).slice(-3).join(" / ") : "No recording loaded"}
+          {recording
+            ? recording.split(/[\\/]/).slice(-3).join(" / ")
+            : "No recording loaded"}
         </div>
       </section>
 
@@ -203,59 +261,109 @@ export default function Home() {
         <article className="panel primaryPrediction">
           <span className="label">NEURAL PREDICTION</span>
           <div className="bigPrediction">
-            {prediction?.status === "ok" ? titleCase(prediction.prediction) : modelReady ? "WAITING" : "NO MODEL"}
+            {prediction?.status === "ok"
+              ? titleCase(prediction.prediction)
+              : wordModelReady
+                ? "WAITING"
+                : "NO MODEL"}
           </div>
           <div className="confidence">
             <span>Confidence</span>
-            <strong>{prediction?.status === "ok" ? pct(prediction.prediction_confidence) : "—"}</strong>
+            <strong>
+              {prediction?.status === "ok"
+                ? pct(prediction.prediction_confidence)
+                : "—"}
+            </strong>
           </div>
-          {prediction?.status === "model_unavailable" && <p className="muted">{prediction.message}</p>}
+          {prediction?.status === "model_unavailable" && (
+            <p className="muted">{prediction.message}</p>
+          )}
         </article>
 
         <article className="panel">
           <span className="label">RECORDED TASK ANNOTATION</span>
           <div className="groundTruth">{titleCase(groundTruth)}</div>
-          <p className="muted">Ground truth from the public dataset. This is not presented as a model prediction.</p>
+          <p className="muted">
+            Ground truth from the public dataset. This is not presented as a
+            model prediction.
+          </p>
         </article>
 
         <article className="panel">
           <span className="label">DETECTED STATE</span>
-          <div className="groundTruth">{prediction?.state ? titleCase(prediction.state) : "—"}</div>
-          <div className="confidence compact"><span>Model confidence</span><strong>{pct(prediction?.state_confidence)}</strong></div>
-          <p className="muted">State confidence stays blank until a dedicated state classifier is trained.</p>
+          <div className="groundTruth">
+            {prediction?.state
+              ? titleCase(prediction.state)
+              : stateModelReady
+                ? "WAITING"
+                : "NO MODEL"}
+          </div>
+          <div className="confidence compact">
+            <span>Model confidence</span>
+            <strong>{pct(prediction?.state_confidence)}</strong>
+          </div>
+          <p className="muted">
+            State output appears only when a dedicated state classifier produces
+            it.
+          </p>
         </article>
       </section>
 
       <section className="panel alternatives">
         <div className="panelHead">
-          <div><span className="label">CLASS DISTRIBUTION</span><h3>Alternative predictions</h3></div>
-          <span className="sourceTag">{prediction?.model_version ?? "MODEL UNAVAILABLE"}</span>
+          <div>
+            <span className="label">CLASS DISTRIBUTION</span>
+            <h3>Alternative predictions</h3>
+          </div>
+          <span className="sourceTag">
+            {prediction?.model_version ?? "MODEL UNAVAILABLE"}
+          </span>
         </div>
 
         <div className="bars">
           {prediction?.status === "ok" ? (
             [
-              { label: prediction.prediction ?? "", confidence: prediction.prediction_confidence ?? 0 },
-              ...prediction.alternatives
+              {
+                label: prediction.prediction ?? "",
+                confidence: prediction.prediction_confidence ?? 0,
+              },
+              ...prediction.alternatives,
             ].map((item) => (
               <div className="barRow" key={item.label}>
                 <span>{titleCase(item.label)}</span>
                 <div className="barTrack">
-                  <div className="barFill" style={{ width: `${Math.max(0, Math.min(100, item.confidence * 100))}%` }} />
+                  <div
+                    className="barFill"
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(100, item.confidence * 100),
+                      )}%`,
+                    }}
+                  />
                 </div>
                 <strong>{pct(item.confidence)}</strong>
               </div>
             ))
           ) : (
-            <div className="emptyBars">Probabilities appear only after a locally trained model produces them.</div>
+            <div className="emptyBars">
+              Probabilities appear only after a locally trained model produces
+              them.
+            </div>
           )}
         </div>
       </section>
 
       <footer>
-        <span>LUCID v0.1</span>
-        <span>PUBLIC DATA · LOCAL MODEL · SQLITE</span>
-        <a href="https://nemar.org/dataset/nm000113" target="_blank" rel="noreferrer">NEMAR nm000113 ↗</a>
+        <span>LUCID v0.2</span>
+        <span>PUBLIC DATA · LOCAL MODELS · SQLITE</span>
+        <a
+          href="https://nemar.org/dataset/nm000113"
+          target="_blank"
+          rel="noreferrer"
+        >
+          NEMAR nm000113 ↗
+        </a>
       </footer>
     </main>
   );
