@@ -30,9 +30,11 @@ replay = PublicEEGReplay()
 def attach_state_prediction(
     result: Prediction,
     window,
+    source_provenance: str | None,
 ) -> Prediction:
     state_result = state_predictor.classify(
-        window
+        window,
+        source_provenance=source_provenance,
     )
 
     if state_result.status == "ok":
@@ -98,6 +100,19 @@ def status():
         state_model_path=str(
             DEFAULT_STATE_MODEL_PATH
         ),
+        prepared_provenance=(
+            replay.provenance_sha256
+        ),
+        model_provenance=(
+            predictor.loaded.provenance_sha256
+            if predictor.loaded
+            else None
+        ),
+        state_model_provenance=(
+            state_predictor.loaded.provenance_sha256
+            if state_predictor.loaded
+            else None
+        ),
     )
 
 
@@ -140,10 +155,14 @@ def predict_replay():
     result = predictor.predict(
         trial.data,
         source_recording=trial.recording,
+        source_provenance=(
+            trial.provenance_sha256
+        ),
     )
     result = attach_state_prediction(
         result,
         trial.data,
+        trial.provenance_sha256,
     )
 
     if result.status == "ok":
@@ -211,6 +230,9 @@ async def live(websocket: WebSocket):
                     "samples": int(
                         trial.data.shape[1]
                     ),
+                    "provenance_sha256": (
+                        trial.provenance_sha256
+                    ),
                 }
             )
 
@@ -242,10 +264,14 @@ async def live(websocket: WebSocket):
                 source_recording=(
                     trial.recording
                 ),
+                source_provenance=(
+                    trial.provenance_sha256
+                ),
             )
             result = attach_state_prediction(
                 result,
                 trial.data,
+                trial.provenance_sha256,
             )
 
             await websocket.send_json(
