@@ -6,9 +6,14 @@ from pathlib import Path
 import random
 import sys
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
+BACKEND_DIR = Path(
+    __file__
+).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
+    sys.path.insert(
+        0,
+        str(BACKEND_DIR),
+    )
 
 import numpy as np
 import torch
@@ -19,9 +24,15 @@ from sklearn.metrics import (
     confusion_matrix,
 )
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import (
+    DataLoader,
+    TensorDataset,
+)
 
-from app.config import DEFAULT_MODEL_PATH, DEFAULT_PREPARED_PATH
+from app.config import (
+    DEFAULT_MODEL_PATH,
+    DEFAULT_PREPARED_PATH,
+)
 from app.model import EEGNet
 
 
@@ -34,29 +45,57 @@ def seed_everything(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def loader_for(x, y, mask, batch_size, shuffle):
+def loader_for(
+    x,
+    y,
+    mask,
+    batch_size,
+    shuffle,
+):
     return DataLoader(
         TensorDataset(
-            torch.from_numpy(x[mask]).float(),
-            torch.from_numpy(y[mask]).long(),
+            torch.from_numpy(
+                x[mask]
+            ).float(),
+            torch.from_numpy(
+                y[mask]
+            ).long(),
         ),
         batch_size=batch_size,
         shuffle=shuffle,
     )
 
 
-def evaluate(model, loader, device):
+def evaluate(
+    model,
+    loader,
+    device,
+):
     model.eval()
     ys = []
     preds = []
 
     with torch.inference_mode():
         for xb, yb in loader:
-            prediction = model(xb.to(device)).argmax(dim=1).cpu().numpy()
-            ys.extend(yb.numpy().tolist())
-            preds.extend(prediction.tolist())
+            prediction = (
+                model(
+                    xb.to(device)
+                )
+                .argmax(dim=1)
+                .cpu()
+                .numpy()
+            )
+            ys.extend(
+                yb.numpy().tolist()
+            )
+            preds.extend(
+                prediction.tolist()
+            )
 
-    return np.array(ys), np.array(preds)
+    return (
+        np.array(ys),
+        np.array(preds),
+    )
 
 
 def main() -> None:
@@ -71,34 +110,85 @@ def main() -> None:
         type=Path,
         default=DEFAULT_MODEL_PATH,
     )
-    parser.add_argument("--epochs", type=int, default=25)
-    parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--task",
+        choices=["words", "state"],
+        default=None,
+        help=(
+            "Optional explicit task. If omitted, "
+            "the prepared archive task field is "
+            "used, falling back to words."
+        ),
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=25,
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=32,
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=1e-3,
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+    )
     args = parser.parse_args()
 
     seed_everything(args.seed)
 
     if not args.prepared.exists():
         raise SystemExit(
-            f"Prepared public EEG not found: {args.prepared}. "
-            "Run download_nemar.py and prepare_dataset.py first."
+            "Prepared public EEG not found: "
+            f"{args.prepared}. Run the "
+            "documented public-data preparation "
+            "first."
         )
 
-    archive = np.load(args.prepared, allow_pickle=False)
+    archive = np.load(
+        args.prepared,
+        allow_pickle=False,
+    )
     x = archive["x"].astype(np.float32)
     y = archive["y"].astype(np.int64)
     split = archive["split"]
     labels = archive["labels"].tolist()
-    dataset_id = str(archive["dataset_id"])
+    dataset_id = str(
+        archive["dataset_id"]
+    )
+    archive_task = (
+        str(archive["task"])
+        if "task" in archive.files
+        else "words"
+    )
+    task = args.task or archive_task
+
+    if task != archive_task:
+        raise SystemExit(
+            f"Requested task {task!r} does "
+            f"not match prepared archive "
+            f"task {archive_task!r}."
+        )
 
     train_mask = split == 0
     val_mask = split == 1
     test_mask = split == 2
 
-    if not train_mask.any() or not val_mask.any() or not test_mask.any():
+    if (
+        not train_mask.any()
+        or not val_mask.any()
+        or not test_mask.any()
+    ):
         raise SystemExit(
-            "Train/validation/test participant splits are required."
+            "Train/validation/test participant "
+            "splits are required."
         )
 
     train_loader = loader_for(
@@ -124,7 +214,9 @@ def main() -> None:
     )
 
     device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
+        "cuda"
+        if torch.cuda.is_available()
+        else "cpu"
     )
     model = EEGNet(
         channels=x.shape[1],
@@ -141,7 +233,10 @@ def main() -> None:
     best_val = -1.0
     best_state = None
 
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(
+        1,
+        args.epochs + 1,
+    ):
         model.train()
         running_loss = 0.0
         seen = 0
@@ -150,12 +245,20 @@ def main() -> None:
             xb = xb.to(device)
             yb = yb.to(device)
 
-            optimizer.zero_grad(set_to_none=True)
-            loss = criterion(model(xb), yb)
+            optimizer.zero_grad(
+                set_to_none=True
+            )
+            loss = criterion(
+                model(xb),
+                yb,
+            )
             loss.backward()
             optimizer.step()
 
-            running_loss += float(loss.item()) * len(xb)
+            running_loss += (
+                float(loss.item())
+                * len(xb)
+            )
             seen += len(xb)
 
         val_y, val_pred = evaluate(
@@ -163,30 +266,47 @@ def main() -> None:
             val_loader,
             device,
         )
-        val_balanced_accuracy = balanced_accuracy_score(
-            val_y,
-            val_pred,
+        val_balanced_accuracy = (
+            balanced_accuracy_score(
+                val_y,
+                val_pred,
+            )
         )
 
         print(
             f"epoch={epoch:03d} "
-            f"loss={running_loss / max(seen, 1):.4f} "
-            f"val_balanced_accuracy={val_balanced_accuracy:.4f}"
+            f"loss="
+            f"{running_loss / max(seen, 1):.4f} "
+            f"val_balanced_accuracy="
+            f"{val_balanced_accuracy:.4f}"
         )
 
-        if val_balanced_accuracy > best_val:
-            best_val = float(val_balanced_accuracy)
+        if (
+            val_balanced_accuracy
+            > best_val
+        ):
+            best_val = float(
+                val_balanced_accuracy
+            )
             best_state = {
-                key: value.detach().cpu().clone()
-                for key, value in model.state_dict().items()
+                key: (
+                    value.detach()
+                    .cpu()
+                    .clone()
+                )
+                for key, value
+                in model.state_dict().items()
             }
 
     if best_state is None:
         raise RuntimeError(
-            "Training never produced a model state."
+            "Training never produced "
+            "a model state."
         )
 
-    model.load_state_dict(best_state)
+    model.load_state_dict(
+        best_state
+    )
     model.to(device)
 
     test_y, test_pred = evaluate(
@@ -197,27 +317,44 @@ def main() -> None:
 
     metrics = {
         "dataset_id": dataset_id,
-        "split": "participant-held-out",
+        "task": task,
+        "split": (
+            "participant-held-out"
+        ),
         "seed": args.seed,
         "test_accuracy": float(
-            accuracy_score(test_y, test_pred)
+            accuracy_score(
+                test_y,
+                test_pred,
+            )
         ),
         "test_balanced_accuracy": float(
-            balanced_accuracy_score(test_y, test_pred)
+            balanced_accuracy_score(
+                test_y,
+                test_pred,
+            )
         ),
-        "classification_report": classification_report(
-            test_y,
-            test_pred,
-            labels=list(range(len(labels))),
-            target_names=labels,
-            zero_division=0,
-            output_dict=True,
+        "classification_report": (
+            classification_report(
+                test_y,
+                test_pred,
+                labels=list(
+                    range(len(labels))
+                ),
+                target_names=labels,
+                zero_division=0,
+                output_dict=True,
+            )
         ),
-        "confusion_matrix": confusion_matrix(
-            test_y,
-            test_pred,
-            labels=list(range(len(labels))),
-        ).tolist(),
+        "confusion_matrix": (
+            confusion_matrix(
+                test_y,
+                test_pred,
+                labels=list(
+                    range(len(labels))
+                ),
+            ).tolist()
+        ),
         "labels": labels,
     }
 
@@ -225,19 +362,30 @@ def main() -> None:
         parents=True,
         exist_ok=True,
     )
+    model_version = (
+        f"eegnet_{task}_v1"
+    )
+
     torch.save(
         {
             "state_dict": best_state,
             "labels": labels,
-            "channels": int(x.shape[1]),
-            "samples": int(x.shape[2]),
+            "channels": int(
+                x.shape[1]
+            ),
+            "samples": int(
+                x.shape[2]
+            ),
             "dataset_id": dataset_id,
-            "model_version": "eegnet_words_v1",
+            "task": task,
+            "model_version": (
+                model_version
+            ),
             "preprocessing": {
-                "bandpass_hz": [1.0, 40.0],
                 "target_sfreq": 128.0,
                 "normalization": (
-                    "per-trial per-channel z-score"
+                    "per-trial per-channel "
+                    "z-score"
                 ),
             },
             "metrics": metrics,
@@ -245,17 +393,31 @@ def main() -> None:
         args.output,
     )
 
-    metrics_path = args.output.with_suffix(
-        ".metrics.json"
+    metrics_path = (
+        args.output.with_suffix(
+            ".metrics.json"
+        )
     )
     metrics_path.write_text(
-        json.dumps(metrics, indent=2),
+        json.dumps(
+            metrics,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
-    print(json.dumps(metrics, indent=2))
-    print(f"model={args.output}")
-    print(f"metrics={metrics_path}")
+    print(
+        json.dumps(
+            metrics,
+            indent=2,
+        )
+    )
+    print(
+        f"model={args.output}"
+    )
+    print(
+        f"metrics={metrics_path}"
+    )
 
 
 if __name__ == "__main__":
