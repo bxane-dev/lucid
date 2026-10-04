@@ -19,6 +19,7 @@ class LoadedModel:
     version: str
     task: str
     architecture: str
+    provenance_sha256: str
     device: torch.device
 
 
@@ -93,6 +94,17 @@ class Predictor:
                     "eegnet",
                 )
             )
+            provenance_sha256 = str(
+                checkpoint.get(
+                    "provenance_sha256",
+                    "",
+                )
+            )
+            if len(provenance_sha256) != 64:
+                raise ValueError(
+                    "Checkpoint has no valid source provenance. "
+                    "Retrain it from a provenance-enabled prepared archive."
+                )
 
             model = build_model(
                 architecture,
@@ -125,6 +137,7 @@ class Predictor:
                 ),
                 task=task,
                 architecture=architecture,
+                provenance_sha256=provenance_sha256,
                 device=device,
             )
         except Exception as exc:
@@ -133,6 +146,8 @@ class Predictor:
     def classify(
         self,
         window: np.ndarray,
+        *,
+        source_provenance: str | None = None,
     ) -> ClassResult:
         if self.loaded is None:
             return ClassResult(
@@ -149,6 +164,18 @@ class Predictor:
             )
 
         loaded = self.loaded
+        if (
+            source_provenance is not None
+            and source_provenance != loaded.provenance_sha256
+        ):
+            return ClassResult(
+                status="error",
+                message=(
+                    "Model/source provenance mismatch. "
+                    "Lucid refuses to score EEG from a different prepared source."
+                ),
+            )
+
         x = np.asarray(
             window,
             dtype=np.float32,
@@ -220,9 +247,13 @@ class Predictor:
         source_recording: (
             str | None
         ) = None,
+        source_provenance: (
+            str | None
+        ) = None,
     ) -> Prediction:
         result = self.classify(
-            window
+            window,
+            source_provenance=source_provenance,
         )
 
         if result.status != "ok":
@@ -235,6 +266,11 @@ class Predictor:
                 ),
                 model_version=(
                     self.loaded.version
+                    if self.loaded
+                    else None
+                ),
+                provenance_sha256=(
+                    self.loaded.provenance_sha256
                     if self.loaded
                     else None
                 ),
@@ -270,5 +306,8 @@ class Predictor:
             ),
             model_version=(
                 self.loaded.version
+            ),
+            provenance_sha256=(
+                self.loaded.provenance_sha256
             ),
         )
