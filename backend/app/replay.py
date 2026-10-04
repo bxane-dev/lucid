@@ -11,6 +11,7 @@ class ReplayTrial:
     recording: str
     sfreq: float
     dataset_id: str
+    provenance_sha256: str
 
 
 class PublicEEGReplay:
@@ -37,10 +38,16 @@ class PublicEEGReplay:
             raise RuntimeError("Prepared dataset contains no held-out test trials.")
         idx = int(test_indices[self._cursor % len(test_indices)])
         self._cursor += 1
+        if "provenance_sha256" not in archive.files:
+            raise RuntimeError(
+                "Prepared public EEG has no provenance hash. "
+                "Re-run dataset preparation."
+            )
         labels = archive["labels"].tolist()
         label_idx = int(archive["y"][idx])
         return ReplayTrial(
             archive["x"][idx].astype(np.float32, copy=False),
             str(labels[label_idx]), str(archive["recordings"][idx]),
             float(archive["sfreq"]), str(archive["dataset_id"]),
+            str(archive["provenance_sha256"]),
         )
