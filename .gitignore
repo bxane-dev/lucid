@@ -20,3 +20,6 @@ runtime/
 Thumbs.db
 .vscode/
 .idea/
+backend/build/
+backend/dist/
+desktop/dist/
