@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+
 import numpy as np
 import torch
 
@@ -16,11 +17,24 @@ class LoadedModel:
     samples: int
     dataset_id: str
     version: str
+    task: str
     device: torch.device
 
 
+@dataclass
+class ClassResult:
+    status: str
+    label: str | None = None
+    confidence: float | None = None
+    probabilities: list[tuple[str, float]] | None = None
+    message: str | None = None
+
+
 class Predictor:
-    def __init__(self, model_path: Path = DEFAULT_MODEL_PATH) -> None:
+    def __init__(
+        self,
+        model_path: Path = DEFAULT_MODEL_PATH,
+    ) -> None:
         self.model_path = Path(model_path)
         self.loaded: LoadedModel | None = None
         self.load_error: str | None = None
@@ -33,38 +47,172 @@ class Predictor:
     def reload(self) -> None:
         self.loaded = None
         self.load_error = None
+
         if not self.model_path.exists():
-            self.load_error = f"Model not found: {self.model_path}"
+            self.load_error = (
+                f"Model not found: {self.model_path}"
+            )
             return
+
         try:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            checkpoint = torch.load(self.model_path, map_location=device, weights_only=False)
+            device = torch.device(
+                "cuda"
+                if torch.cuda.is_available()
+                else "cpu"
+            )
+            checkpoint = torch.load(
+                self.model_path,
+                map_location=device,
+                weights_only=False,
+            )
             labels = list(checkpoint["labels"])
             channels = int(checkpoint["channels"])
             samples = int(checkpoint["samples"])
-            model = EEGNet(channels=channels, classes=len(labels))
-            model.load_state_dict(checkpoint["state_dict"])
+            task = str(
+                checkpoint.get("task", "words")
+            )
+
+            model = EEGNet(
+                channels=channels,
+                classes=len(labels),
+            )
+            model.load_state_dict(
+                checkpoint["state_dict"]
+            )
             model.to(device).eval()
-            self.loaded = LoadedModel(model, labels, channels, samples, str(checkpoint["dataset_id"]), str(checkpoint.get("model_version", "eegnet_words_v1")), device)
+
+            self.loaded = LoadedModel(
+                model=model,
+                labels=labels,
+                channels=channels,
+                samples=samples,
+                dataset_id=str(
+                    checkpoint["dataset_id"]
+                ),
+                version=str(
+                    checkpoint.get(
+                        "model_version",
+                        f"eegnet_{task}_v1",
+                    )
+                ),
+                task=task,
+                device=device,
+            )
         except Exception as exc:
             self.load_error = str(exc)
 
-    def predict(self, window: np.ndarray, *, source_recording: str | None = None) -> Prediction:
+    def classify(
+        self,
+        window: np.ndarray,
+    ) -> ClassResult:
         if self.loaded is None:
-            return Prediction(status="model_unavailable", message=self.load_error or "No trained model is loaded.")
+            return ClassResult(
+                status="model_unavailable",
+                message=(
+                    self.load_error
+                    or "No trained model is loaded."
+                ),
+            )
+
         loaded = self.loaded
-        x = np.asarray(window, dtype=np.float32)
-        if x.shape != (loaded.channels, loaded.samples):
-            return Prediction(status="error", source_dataset=loaded.dataset_id, model_version=loaded.version, message=f"Model expects {(loaded.channels, loaded.samples)}, received {tuple(x.shape)}")
-        tensor = torch.from_numpy(x).unsqueeze(0).to(loaded.device)
+        x = np.asarray(
+            window,
+            dtype=np.float32,
+        )
+
+        if x.shape != (
+            loaded.channels,
+            loaded.samples,
+        ):
+            return ClassResult(
+                status="error",
+                message=(
+                    f"Model expects "
+                    f"{(loaded.channels, loaded.samples)}, "
+                    f"received {tuple(x.shape)}"
+                ),
+            )
+
+        tensor = (
+            torch.from_numpy(x)
+            .unsqueeze(0)
+            .to(loaded.device)
+        )
+
         with torch.inference_mode():
-            probs = torch.softmax(loaded.model(tensor), dim=1)[0].cpu().numpy()
+            probs = (
+                torch.softmax(
+                    loaded.model(tensor),
+                    dim=1,
+                )[0]
+                .cpu()
+                .numpy()
+            )
+
         order = np.argsort(probs)[::-1]
         best = int(order[0])
-        alternatives = [Alternative(label=loaded.labels[int(i)], confidence=float(probs[int(i)])) for i in order[1:]]
+        probabilities = [
+            (
+                loaded.labels[int(index)],
+                float(probs[int(index)]),
+            )
+            for index in order
+        ]
+
+        return ClassResult(
+            status="ok",
+            label=loaded.labels[best],
+            confidence=float(probs[best]),
+            probabilities=probabilities,
+        )
+
+    def predict(
+        self,
+        window: np.ndarray,
+        *,
+        source_recording: str | None = None,
+    ) -> Prediction:
+        result = self.classify(window)
+
+        if result.status != "ok":
+            return Prediction(
+                status=result.status,
+                source_dataset=(
+                    self.loaded.dataset_id
+                    if self.loaded
+                    else None
+                ),
+                model_version=(
+                    self.loaded.version
+                    if self.loaded
+                    else None
+                ),
+                message=result.message,
+            )
+
+        assert self.loaded is not None
+        probabilities = (
+            result.probabilities or []
+        )
+        alternatives = [
+            Alternative(
+                label=label,
+                confidence=confidence,
+            )
+            for label, confidence
+            in probabilities[1:]
+        ]
+
         return Prediction(
-            status="ok", state="imagined_speech", state_confidence=None,
-            prediction=loaded.labels[best], prediction_confidence=float(probs[best]),
-            alternatives=alternatives, source_dataset=loaded.dataset_id,
-            source_recording=source_recording, model_version=loaded.version,
+            status="ok",
+            prediction=result.label,
+            prediction_confidence=(
+                result.confidence
+            ),
+            alternatives=alternatives,
+            source_dataset=(
+                self.loaded.dataset_id
+            ),
+            source_recording=source_recording,
+            model_version=self.loaded.version,
         )
