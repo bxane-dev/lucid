@@ -254,6 +254,54 @@ models/                 locally trained checkpoints; gitignored
 runtime/                SQLite prediction log; gitignored
 ```
 
+## Desktop installer
+
+Lucid can be packaged as a normal desktop application. The installed app starts
+its own local FastAPI/PyTorch backend and opens the Lucid interface in an
+Electron window. Users do not need to run `uvicorn` or `npm run dev`.
+
+### Windows
+
+GitHub Actions builds:
+
+```text
+Lucid-Setup-0.3.0-x64.exe
+```
+
+The NSIS installer supports a custom install directory and creates Start Menu
+and desktop shortcuts.
+
+### Linux
+
+The same workflow builds:
+
+```text
+Lucid-0.3.0-x86_64.AppImage
+```
+
+### Installed data location
+
+The application binary is installed separately from research data. Public EEG,
+prepared archives, trained models, and the local SQLite database are stored in
+the operating system's per-user Lucid application-data directory. Uninstalling
+Lucid does not delete research data by default.
+
+No EEG dataset or pretrained result is silently bundled into the installer.
+Lucid still follows the real-public-data and provenance rules documented below.
+
+### Rebuild installers
+
+Open the repository's **Actions** tab and run the `desktop-installers`
+workflow, or push a change affecting `desktop/`, `backend/`, or
+`frontend/`.
+
+The workflow builds a self-contained Python backend with PyInstaller, exports
+the Next.js frontend, packages them with Electron, and uploads the installer
+files as GitHub Actions artifacts.
+
+> Windows packages are currently unsigned. Windows SmartScreen may therefore
+> identify the publisher as unknown until a code-signing certificate is added.
+
 ## Zero-cost rule
 
 The prototype requires no paid API, server, GPU, cloud database, commercial dataset, or EEG headset. CPU training works locally; free Colab/Kaggle compute can be used without changing the data pipeline.
