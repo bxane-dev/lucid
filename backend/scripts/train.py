@@ -93,6 +93,14 @@ def main() -> None:
     split = archive["split"]
     labels = archive["labels"].tolist()
     dataset_id = str(archive["dataset_id"])
+    if "provenance_sha256" not in archive.files:
+        raise SystemExit(
+            "Prepared archive has no source provenance. Re-run the current "
+            "public-data preparation before training."
+        )
+    provenance_sha256 = str(archive["provenance_sha256"])
+    if len(provenance_sha256) != 64:
+        raise SystemExit("Prepared archive provenance hash is invalid.")
     archive_task = str(archive["task"]) if "task" in archive.files else "words"
     task = args.task or archive_task
 
@@ -187,6 +195,7 @@ def main() -> None:
         "task": task,
         "architecture": args.architecture,
         "split": "participant-held-out",
+        "provenance_sha256": provenance_sha256,
         "seed": args.seed,
         "best_epoch": best_epoch,
         "best_validation_balanced_accuracy": best_val,
@@ -224,6 +233,7 @@ def main() -> None:
             "channels": int(x.shape[1]),
             "samples": int(x.shape[2]),
             "dataset_id": dataset_id,
+            "provenance_sha256": provenance_sha256,
             "task": task,
             "architecture": args.architecture,
             "model_version": model_version,
