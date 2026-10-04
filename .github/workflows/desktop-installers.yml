@@ -1,0 +1,92 @@
+name: desktop-installers
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/desktop-installers.yml"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win
+            artifact: lucid-windows-installer
+          - os: ubuntu-latest
+            target: linux
+            artifact: lucid-linux-appimage
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Build static Lucid frontend
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_LUCID_API: http://127.0.0.1:8765
+          NEXT_PUBLIC_LUCID_WS: ws://127.0.0.1:8765/ws/live
+        run: npm run build
+
+      - name: Install backend and packager
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Build self-contained backend
+        working-directory: backend
+        run: pyinstaller --noconfirm --clean lucid_backend.spec
+
+      - name: Install desktop packager
+        working-directory: desktop
+        run: npm install
+
+      - name: Build Windows installer
+        if: matrix.target == 'win'
+        working-directory: desktop
+        run: npm run dist:win
+
+      - name: Build Linux AppImage
+        if: matrix.target == 'linux'
+        working-directory: desktop
+        run: npm run dist:linux
+
+      - name: Upload Windows installer
+        if: matrix.target == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: desktop/dist/*.exe
+          if-no-files-found: error
+
+      - name: Upload Linux AppImage
+        if: matrix.target == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: desktop/dist/*.AppImage
+          if-no-files-found: error
