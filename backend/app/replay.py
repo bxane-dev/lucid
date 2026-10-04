@@ -22,7 +22,12 @@ class PublicEEGReplay:
 
     @property
     def ready(self) -> bool:
-        return self.path.exists()
+        if not self.path.exists():
+            return False
+        try:
+            return self.provenance_sha256 is not None
+        except Exception:
+            return False
 
     @property
     def provenance_sha256(self) -> str | None:
