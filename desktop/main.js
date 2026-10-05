@@ -3,6 +3,7 @@ const { spawn } = require("child_process");
 const http = require("http");
 const net = require("net");
 const path = require("path");
+const { autoUpdater } = require("electron-updater");
 
 const HOST = "127.0.0.1";
 
@@ -104,6 +105,21 @@ function startBackend(port) {
   });
 }
 
+function configureAutoUpdater() {
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("error", () => {
+    // Update failures never block local EEG research workflows.
+  });
+
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  }, 5000);
+}
+
 function createWindow(url) {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -146,6 +162,7 @@ app.whenReady().then(async () => {
     startBackend(port);
     await waitForBackend(backendUrl);
     createWindow(backendUrl);
+    configureAutoUpdater();
   } catch (error) {
     dialog.showErrorBox(
       "Lucid could not start",
