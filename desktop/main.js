@@ -1,14 +1,14 @@
 const { app, BrowserWindow, dialog, shell } = require("electron");
 const { spawn } = require("child_process");
 const http = require("http");
+const net = require("net");
 const path = require("path");
 
 const HOST = "127.0.0.1";
-const PORT = 8765;
-const URL = "http://" + HOST + ":" + PORT;
 
 let backend = null;
 let mainWindow = null;
+let backendUrl = null;
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -22,7 +22,30 @@ function backendPath() {
   return path.join(process.resourcesPath, "backend", executable);
 }
 
-function waitForBackend(timeoutMs = 60000) {
+function findFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, HOST, () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : null;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        if (!port) {
+          reject(new Error("Could not allocate a local Lucid port."));
+          return;
+        }
+        resolve(port);
+      });
+    });
+  });
+}
+
+function waitForBackend(url, timeoutMs = 60000) {
   const started = Date.now();
 
   return new Promise((resolve, reject) => {
@@ -35,9 +58,9 @@ function waitForBackend(timeoutMs = 60000) {
     };
 
     const probe = () => {
-      const request = http.get(URL + "/health", (response) => {
+      const request = http.get(url + "/health", (response) => {
         response.resume();
-        if (response.statusCode && response.statusCode < 500) {
+        if (response.statusCode === 200) {
           resolve();
           return;
         }
@@ -55,12 +78,12 @@ function waitForBackend(timeoutMs = 60000) {
   });
 }
 
-function startBackend() {
+function startBackend(port) {
   const storage = path.join(app.getPath("userData"), "data");
 
   backend = spawn(
     backendPath(),
-    ["--host", HOST, "--port", String(PORT)],
+    ["--host", HOST, "--port", String(port)],
     {
       env: {
         ...process.env,
@@ -81,7 +104,7 @@ function startBackend() {
   });
 }
 
-function createWindow() {
+function createWindow(url) {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -96,14 +119,17 @@ function createWindow() {
     }
   });
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https://") || url.startsWith("http://")) {
-      shell.openExternal(url);
+  mainWindow.webContents.setWindowOpenHandler(({ url: externalUrl }) => {
+    if (
+      (externalUrl.startsWith("https://") || externalUrl.startsWith("http://")) &&
+      !externalUrl.startsWith(url)
+    ) {
+      shell.openExternal(externalUrl);
     }
     return { action: "deny" };
   });
 
-  mainWindow.loadURL(URL);
+  mainWindow.loadURL(url);
 }
 
 app.on("second-instance", () => {
@@ -115,9 +141,11 @@ app.on("second-instance", () => {
 
 app.whenReady().then(async () => {
   try {
-    startBackend();
-    await waitForBackend();
-    createWindow();
+    const port = await findFreePort();
+    backendUrl = "http://" + HOST + ":" + port;
+    startBackend(port);
+    await waitForBackend(backendUrl);
+    createWindow(backendUrl);
   } catch (error) {
     dialog.showErrorBox(
       "Lucid could not start",
