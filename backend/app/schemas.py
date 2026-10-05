@@ -50,3 +50,20 @@ class StatusResponse(BaseModel):
     rule: str = (
         "No synthetic EEG or fabricated predictions."
     )
+
+
+class DatasetDownloadRequest(BaseModel):
+    mode: Literal["recommended", "all"] = "recommended"
+    subjects: list[str] | None = None
+
+
+class DatasetJobResponse(BaseModel):
+    id: str
+    kind: Literal["download", "prepare"]
+    dataset_id: str
+    status: Literal["queued", "running", "completed", "failed"]
+    progress: dict = Field(default_factory=dict)
+    error: str | None = None
+    result: dict | None = None
+    created_at: float
+    updated_at: float
