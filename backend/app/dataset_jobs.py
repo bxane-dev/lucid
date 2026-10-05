@@ -39,14 +39,6 @@ class DatasetJobManager:
         subjects: list[str] | None,
         derivatives_only: bool | None,
     ) -> dict:
-        for job in self._jobs.values():
-            if (
-                job["dataset_id"] == dataset_id
-                and job["kind"] == "download"
-                and job["status"] in {"queued", "running"}
-            ):
-                raise RuntimeError("A download for this dataset is already running.")
-
         job_id = uuid.uuid4().hex
         now = time.time()
         job = {
@@ -61,6 +53,15 @@ class DatasetJobManager:
             "updated_at": now,
         }
         with self._lock:
+            for existing in self._jobs.values():
+                if (
+                    existing["dataset_id"] == dataset_id
+                    and existing["kind"] == "download"
+                    and existing["status"] in {"queued", "running"}
+                ):
+                    raise RuntimeError(
+                        "A download for this dataset is already running."
+                    )
             self._jobs[job_id] = job
 
         thread = threading.Thread(
@@ -101,14 +102,6 @@ class DatasetJobManager:
             )
 
     def start_prepare(self, dataset_id: str) -> dict:
-        for job in self._jobs.values():
-            if (
-                job["dataset_id"] == dataset_id
-                and job["kind"] == "prepare"
-                and job["status"] in {"queued", "running"}
-            ):
-                raise RuntimeError("Preparation for this dataset is already running.")
-
         job_id = uuid.uuid4().hex
         now = time.time()
         job = {
@@ -123,6 +116,15 @@ class DatasetJobManager:
             "updated_at": now,
         }
         with self._lock:
+            for existing in self._jobs.values():
+                if (
+                    existing["dataset_id"] == dataset_id
+                    and existing["kind"] == "prepare"
+                    and existing["status"] in {"queued", "running"}
+                ):
+                    raise RuntimeError(
+                        "Preparation for this dataset is already running."
+                    )
             self._jobs[job_id] = job
 
         thread = threading.Thread(
