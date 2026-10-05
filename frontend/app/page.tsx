@@ -32,8 +32,32 @@ type ApiStatus = {
   rule: string;
 };
 
-const API = process.env.NEXT_PUBLIC_LUCID_API ?? "http://localhost:8000";
-const WS = process.env.NEXT_PUBLIC_LUCID_WS ?? "ws://localhost:8000/ws/live";
+function runtimeEndpoints() {
+  const configuredApi = process.env.NEXT_PUBLIC_LUCID_API;
+  const configuredWs = process.env.NEXT_PUBLIC_LUCID_WS;
+
+  if (configuredApi && configuredWs) {
+    return { api: configuredApi, ws: configuredWs };
+  }
+
+  if (
+    typeof window !== "undefined" &&
+    window.location.hostname === "127.0.0.1" &&
+    window.location.port !== "3000"
+  ) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return {
+      api: window.location.origin,
+      ws: `${protocol}//${window.location.host}/ws/live`,
+    };
+  }
+
+  return {
+    api: configuredApi ?? "http://localhost:8000",
+    ws: configuredWs ?? "ws://localhost:8000/ws/live",
+  };
+}
+
 const MAX_POINTS = 180;
 
 function pct(value: number | null | undefined) {
@@ -116,7 +140,9 @@ export default function Home() {
   const reconnectRef = useRef<number | null>(null);
 
   useEffect(() => {
-    fetch(`${API}/api/status`)
+    const endpoints = runtimeEndpoints();
+
+    fetch(`${endpoints.api}/api/status`)
       .then((response) => response.json())
       .then(setStatus)
       .catch(() => setStatus(null));
@@ -128,7 +154,7 @@ export default function Home() {
       if (closed) return;
 
       setConnection("connecting");
-      socket = new WebSocket(WS);
+      socket = new WebSocket(endpoints.ws);
 
       socket.onopen = () => {
         setConnection("live");
