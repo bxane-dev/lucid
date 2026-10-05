@@ -54,7 +54,6 @@ excludes = [
     "scipy.tests",
     "sklearn.tests",
     "mne.tests",
-    "torch.testing",
     "mne.viz",
     "mne.report",
     "mne.gui",
