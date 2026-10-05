@@ -281,7 +281,7 @@ Electron window. Users do not need to run `uvicorn` or `npm run dev`.
 GitHub Actions builds:
 
 ```text
-Lucid-Setup-1.0.0-x64.exe
+Lucid-Setup-1.0.1-x64.exe
 ```
 
 The NSIS installer supports a custom install directory and creates Start Menu
@@ -292,8 +292,21 @@ and desktop shortcuts.
 The same workflow builds:
 
 ```text
-Lucid-1.0.0-x64.AppImage
+Lucid-1.0.1-x64.AppImage
 ```
+
+### macOS
+
+The same release workflow builds an actual Intel/x64 macOS application as:
+
+```text
+Lucid-1.0.1-macOS-x64.dmg
+Lucid-1.0.1-macOS-x64.zip
+```
+
+The macOS package is currently Intel/x64 rather than a native Apple Silicon
+build. Apple Silicon Macs can run it through Rosetta 2. The build is not
+Apple-notarized, so Gatekeeper may require the user to explicitly allow it.
 
 ### Installed data location
 
@@ -321,6 +334,12 @@ An update failure never blocks local EEG analysis.
 
 > Windows packages are currently unsigned. Windows SmartScreen may therefore
 > identify the publisher as unknown until a code-signing certificate is added.
+
+## Releases and changelog
+
+Release history is tracked in [CHANGELOG.md](CHANGELOG.md). GitHub Releases
+contain the installable Windows, Linux, and macOS artifacts together with
+SHA-256 checksum files and electron-builder update metadata.
 
 ## Zero-cost rule
 
