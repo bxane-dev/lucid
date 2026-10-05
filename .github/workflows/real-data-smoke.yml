@@ -124,6 +124,33 @@ jobs:
           )
           PY
 
+      - name: Verify desktop runtime path with real public EEG
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          from app.db import init_db
+          from app.main import predict_replay
+          from app.model_registry import model_registry
+          from app.runtime import runtime
+
+          init_db()
+          activated = model_registry.activate_path(
+              Path("../models/eegnet_words.pt")
+          )
+          assert activated["active"] is True
+          runtime.refresh()
+
+          result = predict_replay()
+          assert result.status == "ok", result.message
+          assert result.source_dataset == "nm000113"
+          assert result.provenance_sha256 == activated["provenance_sha256"]
+          assert result.prediction is not None
+          assert result.prediction_confidence is not None
+          print(result.model_dump_json(indent=2))
+          PY
+
       - name: Upload non-EEG validation evidence
         uses: actions/upload-artifact@v4
         with:
