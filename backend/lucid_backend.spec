@@ -16,6 +16,26 @@ datas = [(str(FRONTEND), "frontend")]
 binaries = []
 hiddenimports = []
 
+EXCLUDED_DATA = [
+    "**/tests/**",
+    "**/test/**",
+    "**/testing/**",
+    "**/benchmarks/**",
+    "**/examples/**",
+]
+
+def runtime_module(name: str) -> bool:
+    lowered = name.lower()
+    blocked = (
+        ".tests",
+        ".test.",
+        ".testing",
+        ".benchmarks",
+        ".examples",
+        ".conftest",
+    )
+    return not any(part in lowered for part in blocked)
+
 for package in (
     "mne",
     "sklearn",
@@ -25,8 +45,14 @@ for package in (
     "uvicorn",
     "pydantic",
 ):
-    datas += collect_data_files(package)
-    hiddenimports += collect_submodules(package)
+    datas += collect_data_files(
+        package,
+        excludes=EXCLUDED_DATA,
+    )
+    hiddenimports += collect_submodules(
+        package,
+        filter=runtime_module,
+    )
 
 binaries += collect_dynamic_libs("torch")
 
@@ -39,7 +65,9 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        "pytest",
+    ],
     noarchive=False,
 )
 
