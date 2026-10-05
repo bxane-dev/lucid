@@ -1,11 +1,5 @@
 {
   "version": "1.0.0",
   "mode": "release",
-  "validation": {
-    "ci_run": 37349003342,
-    "desktop_installers_run": 37349003257,
-    "word_benchmark_run": 37343081991,
-    "state_validation_run": 37343736417
-  },
-  "note": "All Lucid v1 release gates recorded as passed."
+  "note": "All measured research, CI, frozen-backend, installer, checksum, update-metadata, and size gates have passed."
 }
