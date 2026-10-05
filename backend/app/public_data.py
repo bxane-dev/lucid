@@ -262,12 +262,28 @@ def local_dataset_status(dataset_id: str) -> dict:
     complete_files = [path for path in files if path.suffix != ".part"]
     bytes_on_disk = sum(path.stat().st_size for path in complete_files)
 
+    subject_root = (
+        root / "derivatives"
+        if meta["derivatives_only"]
+        else root
+    )
+    local_subjects = (
+        sorted(
+            path.name
+            for path in subject_root.glob("sub-*")
+            if path.is_dir()
+        )
+        if subject_root.exists()
+        else []
+    )
+
     word_archive = PREPARED_DATA_DIR / f"{dataset_id}_words.npz"
     state_archive = PREPARED_DATA_DIR / f"{dataset_id}_state.npz"
 
     return {
         **meta,
-        "downloaded": bool(complete_files),
+        "downloaded": len(local_subjects) >= 3 and not partials,
+        "local_subjects": local_subjects,
         "downloaded_files": len(complete_files),
         "bytes_on_disk": bytes_on_disk,
         "partial_files": len(partials),
