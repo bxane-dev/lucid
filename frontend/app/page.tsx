@@ -36,6 +36,7 @@ type DatasetInfo = {
   partial_files: number;
   word_prepared: boolean;
   state_prepared: boolean;
+  active: boolean;
 };
 
 type DatasetJob = {
@@ -52,6 +53,82 @@ type DatasetJob = {
     message?: string;
   };
   error: string | null;
+};
+
+type ModelInfo = {
+  id: string;
+  path: string;
+  dataset_id: string;
+  task: "words" | "state";
+  architecture: string;
+  provenance_sha256: string;
+  checkpoint_sha256: string;
+  best_validation_balanced_accuracy: number | null;
+  test_accuracy: number | null;
+  test_balanced_accuracy: number | null;
+  best_epoch: number | null;
+  labels: string[];
+  active: boolean;
+};
+
+type TrainingJob = {
+  id: string;
+  kind: "train" | "benchmark";
+  dataset_id: string;
+  task: "words" | "state";
+  architecture: string | null;
+  epochs: number;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  progress: {
+    phase?: string;
+    architecture?: string;
+    architecture_index?: number;
+    architecture_total?: number;
+    epoch?: number;
+    epochs?: number;
+    loss?: number;
+    validation_balanced_accuracy?: number;
+    best_validation_balanced_accuracy?: number;
+    winner?: string;
+    message?: string;
+  };
+  result: Record<string, unknown> | null;
+  error: string | null;
+};
+
+type PreparedArchive = {
+  dataset_id: string;
+  task: "words" | "state";
+  prepared: boolean;
+  path: string;
+  metadata: {
+    provenance_sha256?: string;
+    trials?: number;
+    channels?: number;
+    samples?: number;
+    sfreq?: number;
+    train_trials?: number;
+    val_trials?: number;
+    test_trials?: number;
+    subjects?: string[];
+  } | null;
+  error: string | null;
+};
+
+type PreprocessingStatus = {
+  profile: string;
+  immutable_for_v1: boolean;
+  reason: string;
+  raw_eeg: {
+    notch: string;
+    bandpass_hz: number[];
+    average_reference: boolean;
+    target_sfreq_hz: number;
+    artifact_peak_to_peak_limit_uv: number;
+    window_seconds: number;
+    normalization: string;
+  };
+  archives: PreparedArchive[];
 };
 
 type ApiStatus = {
@@ -177,6 +254,15 @@ export default function Home() {
   const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
   const [datasetJob, setDatasetJob] = useState<DatasetJob | null>(null);
   const [datasetMessage, setDatasetMessage] = useState<string | null>(null);
+  const [preprocessing, setPreprocessing] =
+    useState<PreprocessingStatus | null>(null);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [trainingJob, setTrainingJob] = useState<TrainingJob | null>(null);
+  const [trainingMessage, setTrainingMessage] = useState<string | null>(null);
+  const [trainDataset, setTrainDataset] = useState("nm000113");
+  const [trainTask, setTrainTask] = useState<"words" | "state">("words");
+  const [trainArchitecture, setTrainArchitecture] = useState("eegnet");
+  const [trainEpochs, setTrainEpochs] = useState(25);
   const [connection, setConnection] = useState<
     "connecting" | "live" | "offline"
   >("connecting");
@@ -207,8 +293,20 @@ export default function Home() {
         .catch(() => setDatasets([]));
     };
 
+    const refreshWorkbench = () => {
+      fetch(`${endpoints.api}/api/preprocessing`)
+        .then((response) => response.json())
+        .then(setPreprocessing)
+        .catch(() => setPreprocessing(null));
+      fetch(`${endpoints.api}/api/models`)
+        .then((response) => response.json())
+        .then((payload) => setModels(payload.models ?? []))
+        .catch(() => setModels([]));
+    };
+
     refreshStatus();
     refreshDatasets();
+    refreshWorkbench();
 
     let closed = false;
     let socket: WebSocket | null = null;
@@ -302,13 +400,16 @@ export default function Home() {
               : next.error ?? "Dataset operation failed.",
           );
 
-          const [datasetsResponse, statusResponse] = await Promise.all([
-            fetch(`${endpoints.api}/api/datasets`),
-            fetch(`${endpoints.api}/api/status`),
-          ]);
+          const [datasetsResponse, statusResponse, preprocessingResponse] =
+            await Promise.all([
+              fetch(`${endpoints.api}/api/datasets`),
+              fetch(`${endpoints.api}/api/status`),
+              fetch(`${endpoints.api}/api/preprocessing`),
+            ]);
           const datasetPayload = await datasetsResponse.json();
           setDatasets(datasetPayload.datasets ?? []);
           setStatus(await statusResponse.json());
+          setPreprocessing(await preprocessingResponse.json());
         }
       } catch {
         setDatasetMessage("Could not read dataset job status.");
@@ -346,6 +447,144 @@ export default function Home() {
       );
     }
   }
+
+  useEffect(() => {
+    if (!trainingJob || !["queued", "running"].includes(trainingJob.status)) {
+      return;
+    }
+
+    const endpoints = runtimeEndpoints();
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await fetch(
+          `${endpoints.api}/api/training/${trainingJob.id}`,
+        );
+        const next = (await response.json()) as TrainingJob;
+        setTrainingJob(next);
+
+        if (["completed", "failed", "cancelled"].includes(next.status)) {
+          window.clearInterval(timer);
+          setTrainingMessage(
+            next.status === "completed"
+              ? `${next.kind === "benchmark" ? "Benchmark" : "Training"} completed for ${next.dataset_id} / ${next.task}.`
+              : next.error ?? `Training ${next.status}.`,
+          );
+
+          const [modelsResponse, statusResponse] = await Promise.all([
+            fetch(`${endpoints.api}/api/models`),
+            fetch(`${endpoints.api}/api/status`),
+          ]);
+          setModels((await modelsResponse.json()).models ?? []);
+          setStatus(await statusResponse.json());
+        }
+      } catch {
+        setTrainingMessage("Could not read training job status.");
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [trainingJob?.id, trainingJob?.status]);
+
+  async function activateDataset(datasetId: string) {
+    const endpoints = runtimeEndpoints();
+    setDatasetMessage(null);
+    try {
+      const response = await fetch(
+        `${endpoints.api}/api/datasets/${datasetId}/activate`,
+        { method: "POST" },
+      );
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail ?? "Dataset could not be activated.");
+      }
+      setDataset(datasetId);
+      const [datasetsResponse, statusResponse] = await Promise.all([
+        fetch(`${endpoints.api}/api/datasets`),
+        fetch(`${endpoints.api}/api/status`),
+      ]);
+      setDatasets((await datasetsResponse.json()).datasets ?? []);
+      setStatus(await statusResponse.json());
+      setDatasetMessage(`${datasetId} is now the active replay dataset.`);
+    } catch (error) {
+      setDatasetMessage(
+        error instanceof Error ? error.message : "Dataset activation failed.",
+      );
+    }
+  }
+
+  async function startTraining(kind: "train" | "benchmark") {
+    const endpoints = runtimeEndpoints();
+    setTrainingMessage(null);
+    try {
+      const response = await fetch(`${endpoints.api}/api/training`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataset_id: trainDataset,
+          task: trainTask,
+          kind,
+          architecture: trainArchitecture,
+          architectures: kind === "benchmark" ? null : undefined,
+          epochs: trainEpochs,
+          batch_size: 32,
+          seed: 42,
+          auto_activate: true,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail ?? "Training could not start.");
+      }
+      setTrainingJob(payload);
+    } catch (error) {
+      setTrainingMessage(
+        error instanceof Error ? error.message : "Training could not start.",
+      );
+    }
+  }
+
+  async function cancelTraining() {
+    if (!trainingJob) return;
+    const endpoints = runtimeEndpoints();
+    await fetch(`${endpoints.api}/api/training/${trainingJob.id}/cancel`, {
+      method: "POST",
+    });
+  }
+
+  async function activateModel(modelId: string) {
+    const endpoints = runtimeEndpoints();
+    setTrainingMessage(null);
+    try {
+      const response = await fetch(
+        `${endpoints.api}/api/models/${modelId}/activate`,
+        { method: "POST" },
+      );
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail ?? "Model could not be activated.");
+      }
+      const [modelsResponse, statusResponse] = await Promise.all([
+        fetch(`${endpoints.api}/api/models`),
+        fetch(`${endpoints.api}/api/status`),
+      ]);
+      setModels((await modelsResponse.json()).models ?? []);
+      setStatus(await statusResponse.json());
+      setTrainingMessage(
+        `${payload.architecture} ${payload.task} model activated.`,
+      );
+    } catch (error) {
+      setTrainingMessage(
+        error instanceof Error ? error.message : "Model activation failed.",
+      );
+    }
+  }
+
+  const selectedArchive = preprocessing?.archives.find(
+    (item) => item.dataset_id === trainDataset && item.task === trainTask,
+  );
+  const trainingBusy =
+    trainingJob != null &&
+    ["queued", "running"].includes(trainingJob.status);
 
   const wordModelReady = status?.model_ready ?? false;
   const stateModelReady = status?.state_model_ready ?? false;
@@ -493,6 +732,14 @@ export default function Home() {
                   >
                     PREPARE EEG
                   </button>
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    disabled={busy || !item.word_prepared || item.active}
+                    onClick={() => activateDataset(item.id)}
+                  >
+                    {item.active ? "ACTIVE" : "USE DATASET"}
+                  </button>
                 </div>
 
                 <div className="datasetFooter">
@@ -521,6 +768,259 @@ export default function Home() {
           <span>{streamError}</span>
         </section>
       )}
+
+
+      <section className="panel workbench">
+        <div className="panelHead">
+          <div>
+            <span className="label">REPRODUCIBLE PIPELINE</span>
+            <h3>Training workbench</h3>
+          </div>
+          <div className="sourceTag">
+            {preprocessing?.profile ?? "LUCID STANDARD V1"}
+          </div>
+        </div>
+
+        <div className="preprocessStrip">
+          <div>
+            <span>Band-pass</span>
+            <strong>
+              {preprocessing
+                ? `${preprocessing.raw_eeg.bandpass_hz[0]}–${preprocessing.raw_eeg.bandpass_hz[1]} Hz`
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>Sample rate</span>
+            <strong>
+              {preprocessing
+                ? `${preprocessing.raw_eeg.target_sfreq_hz} Hz`
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>Window</span>
+            <strong>
+              {preprocessing
+                ? `${preprocessing.raw_eeg.window_seconds}s`
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>Artifact limit</span>
+            <strong>
+              {preprocessing
+                ? `${preprocessing.raw_eeg.artifact_peak_to_peak_limit_uv} µV`
+                : "—"}
+            </strong>
+          </div>
+        </div>
+
+        <p className="datasetIntro">
+          Lucid v1 locks preprocessing to one documented profile so model
+          comparisons stay reproducible. Benchmark ranking uses validation
+          balanced accuracy; test results are reported only after selection.
+        </p>
+
+        {trainingMessage && (
+          <div className="datasetMessage">{trainingMessage}</div>
+        )}
+
+        {trainingBusy && trainingJob && (
+          <div className="trainingProgress">
+            <div>
+              <strong>
+                {trainingJob.kind === "benchmark" ? "BENCHMARK" : "TRAIN"} ·{" "}
+                {trainingJob.dataset_id} / {trainingJob.task}
+              </strong>
+              <span>
+                {trainingJob.progress.architecture
+                  ? `${trainingJob.progress.architecture} · `
+                  : ""}
+                {trainingJob.progress.epoch
+                  ? `epoch ${trainingJob.progress.epoch}/${trainingJob.progress.epochs}`
+                  : trainingJob.progress.phase ?? trainingJob.status}
+              </span>
+            </div>
+            <div className="trainingMetric">
+              <span>Best validation</span>
+              <strong>
+                {pct(trainingJob.progress.best_validation_balanced_accuracy)}
+              </strong>
+            </div>
+            <button type="button" onClick={cancelTraining}>
+              CANCEL
+            </button>
+          </div>
+        )}
+
+        <div className="trainControls">
+          <label>
+            <span>Dataset</span>
+            <select
+              value={trainDataset}
+              onChange={(event) => {
+                setTrainDataset(event.target.value);
+                if (
+                  event.target.value === "nm000113" &&
+                  trainTask === "state"
+                ) {
+                  setTrainTask("words");
+                }
+              }}
+              disabled={trainingBusy}
+            >
+              {datasets.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.id}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Task</span>
+            <select
+              value={trainTask}
+              onChange={(event) =>
+                setTrainTask(event.target.value as "words" | "state")
+              }
+              disabled={trainingBusy}
+            >
+              <option value="words">Words / intent</option>
+              {trainDataset === "on003626" && (
+                <option value="state">Rest vs imagined speech</option>
+              )}
+            </select>
+          </label>
+
+          <label>
+            <span>Architecture</span>
+            <select
+              value={trainArchitecture}
+              onChange={(event) => setTrainArchitecture(event.target.value)}
+              disabled={trainingBusy}
+            >
+              {[
+                "eegnet",
+                "cnn1d",
+                "cnn_lstm",
+                "temporal_cnn",
+                "transformer",
+                "eeg_conformer",
+              ].map((architecture) => (
+                <option key={architecture} value={architecture}>
+                  {architecture}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Epochs</span>
+            <input
+              type="number"
+              min={1}
+              max={500}
+              value={trainEpochs}
+              onChange={(event) =>
+                setTrainEpochs(
+                  Math.max(1, Math.min(500, Number(event.target.value) || 1)),
+                )
+              }
+              disabled={trainingBusy}
+            />
+          </label>
+        </div>
+
+        <div className="workbenchActions">
+          <button
+            type="button"
+            disabled={trainingBusy || !selectedArchive?.prepared}
+            onClick={() => startTraining("train")}
+          >
+            TRAIN SELECTED MODEL
+          </button>
+          <button
+            type="button"
+            className="secondaryButton"
+            disabled={trainingBusy || !selectedArchive?.prepared}
+            onClick={() => startTraining("benchmark")}
+          >
+            BENCHMARK ALL 6
+          </button>
+          {!selectedArchive?.prepared && (
+            <span>Prepare this dataset/task before training.</span>
+          )}
+        </div>
+
+        <div className="archiveSummary">
+          {selectedArchive?.metadata ? (
+            <>
+              <span>{selectedArchive.metadata.trials ?? "—"} real trials</span>
+              <span>{selectedArchive.metadata.subjects?.length ?? "—"} subjects</span>
+              <span>
+                {selectedArchive.metadata.train_trials ?? "—"} /{" "}
+                {selectedArchive.metadata.val_trials ?? "—"} /{" "}
+                {selectedArchive.metadata.test_trials ?? "—"} train-val-test
+              </span>
+              <span>{shortHash(selectedArchive.metadata.provenance_sha256)}</span>
+            </>
+          ) : (
+            <span>No prepared archive selected.</span>
+          )}
+        </div>
+      </section>
+
+      <section className="panel modelRegistry">
+        <div className="panelHead">
+          <div>
+            <span className="label">LOCAL CHECKPOINTS</span>
+            <h3>Model registry</h3>
+          </div>
+          <div className="sourceTag">{models.length} VERIFIED MODELS</div>
+        </div>
+
+        {models.length ? (
+          <div className="modelTable">
+            {models.map((model) => (
+              <div className="modelRow" key={model.id}>
+                <div>
+                  <strong>
+                    {model.architecture} · {model.task}
+                  </strong>
+                  <span>
+                    {model.dataset_id} · {shortHash(model.provenance_sha256)}
+                  </span>
+                </div>
+                <div>
+                  <span>Validation</span>
+                  <strong>
+                    {pct(model.best_validation_balanced_accuracy)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Held-out test</span>
+                  <strong>{pct(model.test_balanced_accuracy)}</strong>
+                </div>
+                <button
+                  type="button"
+                  className={model.active ? "activeModelButton" : ""}
+                  disabled={model.active || trainingBusy}
+                  onClick={() => activateModel(model.id)}
+                >
+                  {model.active ? "ACTIVE" : "ACTIVATE"}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="emptyBars">
+            No trained checkpoint exists yet. Lucid will not invent model
+            metrics.
+          </div>
+        )}
+      </section>
 
       <section className="panel signalPanel">
         <div className="panelHead">
