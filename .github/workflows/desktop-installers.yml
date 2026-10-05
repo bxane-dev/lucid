@@ -71,6 +71,20 @@ jobs:
         working-directory: backend
         run: pyinstaller --noconfirm --clean lucid_backend.spec
 
+      - name: Verify MNE runtime stub on Windows
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: |
+          $stub = "backend/dist/lucid-backend/_internal/mne/__init__.pyi"
+          if (-not (Test-Path $stub)) {
+            throw "MNE lazy-loader runtime stub is missing from the Windows bundle."
+          }
+
+      - name: Verify MNE runtime stub on Linux
+        if: matrix.target == 'linux'
+        shell: bash
+        run: test -f backend/dist/lucid-backend/_internal/mne/__init__.pyi
+
       - name: Smoke test packaged backend on Windows
         if: matrix.target == 'win'
         shell: pwsh
