@@ -101,6 +101,13 @@ class DatasetJobManager:
             )
 
     def start_prepare(self, dataset_id: str) -> dict:
+        status = local_dataset_status(dataset_id)
+        if not status["downloaded"]:
+            raise ValueError(
+                "At least three complete public participants are required "
+                "before Lucid can prepare this dataset."
+            )
+
         job_id = uuid.uuid4().hex
         now = time.time()
         job = {
