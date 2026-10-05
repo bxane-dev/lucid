@@ -374,23 +374,28 @@ jobs:
       - name: Inventory release assets
         run: |
           find release-assets -maxdepth 2 -type f -printf '%P\n' | sort
-          test -n "$(find release-assets -name 'Lucid-Setup-1.0.0-*.exe' -print -quit)"
-          test -n "$(find release-assets -name 'Lucid-1.0.0-*.AppImage' -print -quit)"
+          test -n "$(find release-assets -name 'Lucid-Setup-1.0.1-*.exe' -print -quit)"
+          test -n "$(find release-assets -name 'Lucid-1.0.1-*.AppImage' -print -quit)"
+          test -n "$(find release-assets -name 'Lucid-1.0.1-macOS-x64.dmg' -print -quit)"
+          test -n "$(find release-assets -name 'Lucid-1.0.1-macOS-x64.zip' -print -quit)"
           test -f release-assets/latest.yml
           test -f release-assets/latest-linux.yml
+          test -f release-assets/latest-mac.yml
 
-      - name: Publish Lucid v1.0.0
+      - name: Publish Lucid v1.0.1
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
+          tag_name: v1.0.1
           target_commitish: ${{ github.sha }}
-          name: Lucid v1.0.0
-          body_path: docs/RELEASE_NOTES_v1.0.0.md
+          name: Lucid v1.0.1
+          body_path: docs/RELEASE_NOTES_v1.0.1.md
           draft: false
           prerelease: false
           files: |
-            release-assets/Lucid-Setup-1.0.0-*.exe
-            release-assets/Lucid-1.0.0-*.AppImage
+            release-assets/Lucid-Setup-1.0.1-*.exe
+            release-assets/Lucid-1.0.1-*.AppImage
+            release-assets/Lucid-1.0.1-macOS-x64.dmg
+            release-assets/Lucid-1.0.1-macOS-x64.zip
             release-assets/*.sha256
             release-assets/latest*.yml
             release-assets/*.blockmap
