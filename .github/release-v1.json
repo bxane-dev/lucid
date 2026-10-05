@@ -1,8 +1,8 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "mode": "release",
   "validation": {
-    "three_platform_preflight_run": 37352104962
+    "packaged_launcher_run": 37356221038
   },
-  "note": "Windows, Linux, and macOS desktop artifacts are verified. Publish with changelog."
+  "note": "Desktop startup hotfix validated with actual packaged Electron/AppImage self-tests on Windows, Linux, and macOS."
 }
