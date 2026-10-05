@@ -45,9 +45,6 @@ jobs:
 
       - name: Build static Lucid frontend
         working-directory: frontend
-        env:
-          NEXT_PUBLIC_LUCID_API: http://127.0.0.1:8765
-          NEXT_PUBLIC_LUCID_WS: ws://127.0.0.1:8765/ws/live
         run: npm run build
 
       - name: Install backend and packager
