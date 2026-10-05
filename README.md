@@ -281,7 +281,7 @@ Electron window. Users do not need to run `uvicorn` or `npm run dev`.
 GitHub Actions builds:
 
 ```text
-Lucid-Setup-1.0.1-x64.exe
+Lucid-Setup-1.0.2-x64.exe
 ```
 
 The NSIS installer supports a custom install directory and creates Start Menu
@@ -292,7 +292,7 @@ and desktop shortcuts.
 The same workflow builds:
 
 ```text
-Lucid-1.0.1-x64.AppImage
+Lucid-1.0.2-x64.AppImage
 ```
 
 ### macOS
@@ -300,8 +300,8 @@ Lucid-1.0.1-x64.AppImage
 The same release workflow builds an actual Intel/x64 macOS application as:
 
 ```text
-Lucid-1.0.1-macOS-x64.dmg
-Lucid-1.0.1-macOS-x64.zip
+Lucid-1.0.2-macOS-x64.dmg
+Lucid-1.0.2-macOS-x64.zip
 ```
 
 The macOS package is currently Intel/x64 rather than a native Apple Silicon
