@@ -1,0 +1,5 @@
+{
+  "version": "1.0.0",
+  "mode": "preflight",
+  "note": "Installer preflight after MNE lazy-loader stub packaging fix."
+}
