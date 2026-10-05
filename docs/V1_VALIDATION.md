@@ -99,3 +99,20 @@ the measured metrics instead of concealing that limitation.
 - test metrics are reported after checkpoint selection and do not choose the winner;
 - prepared EEG and checkpoints must carry matching source provenance;
 - no synthetic EEG, fabricated confidence, or pre-filled metric is accepted.
+
+
+## v1.0.1 three-platform packaging validation
+
+- Three-platform pre-release installer run: `37352104962` — **passed**
+- Windows x64 installer artifact digest: `sha256:f87a80ad3af046d21bb7636d45f7881d5be71b3f3ef4f9608522f1696e9b26c3`
+- Linux x64 AppImage artifact digest: `sha256:7f68610ce4d226f532bd3e3b54b42d5c2569426c142ad58c89453fb3cb15ac73`
+- macOS Intel/x64 DMG+ZIP artifact digest: `sha256:84d0176d17e760bed729ee4668d76a7b7b0b4c537d7b4e7b276da970904eab6b`
+- macOS frozen backend startup: **passed**
+- macOS `/health` endpoint: **passed**
+- macOS bundled frontend serving check: **passed**
+- macOS MNE lazy-loader runtime stub check: **passed**
+- macOS DMG/ZIP package-content and checksum verification: **passed**
+
+The macOS v1.0.1 build is Intel/x64 and unsigned/not notarized. It is not
+described as a native Apple Silicon build. Apple Silicon users may run it via
+Rosetta 2.
