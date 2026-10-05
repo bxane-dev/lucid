@@ -62,6 +62,9 @@ def main() -> None:
         port=args.port,
         log_level="warning",
         access_log=False,
+        loop="asyncio",
+        http="h11",
+        ws="websockets",
     )
 
 
