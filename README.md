@@ -1,6 +1,6 @@
 # Lucid
 
-Lucid is a zero-cost EEG research prototype for classifying limited brain states and imagined-speech commands from **real public EEG recordings**.
+Lucid v1 is a zero-cost EEG research application for classifying limited brain states and imagined-speech commands from **real public EEG recordings**.
 
 Lucid never fabricates EEG, confidence scores, predictions, or model results. If public EEG has not been downloaded, prepared, and a model has not been trained, the API and UI report that the relevant data or model is unavailable.
 
@@ -174,7 +174,23 @@ The benchmark ranks architectures by **validation balanced accuracy**. Test metr
 
 Use `--architectures eegnet cnn1d temporal_cnn` to benchmark a subset.
 
-## Web UI
+## Lucid v1 workbench
+
+The desktop application no longer requires terminal commands for the normal
+workflow. From the Lucid interface you can:
+
+1. download a three-participant starter subset or all supported participants;
+2. prepare the public recordings with the fixed `lucid-standard-v1` profile;
+3. inspect trial counts, subject-held-out splits, channel/sample metadata, and
+   provenance;
+4. train one of six local architectures or benchmark all six;
+5. activate only a checkpoint whose provenance matches the prepared EEG;
+6. switch between prepared datasets;
+7. replay real held-out EEG sample by sample;
+8. view separate dataset ground truth, word/intent output, state output, and
+   model probabilities.
+
+For development, the Next.js interface still runs with:
 
 ```bash
 cd ../frontend
@@ -184,7 +200,7 @@ npm run dev
 
 Open <http://localhost:3000>.
 
-The interface shows real EEG replay traces, source recording provenance, dataset ground truth, word-model readiness, state-model readiness, neural predictions, and model probabilities. Nothing is filled in before the corresponding model actually exists.
+Nothing is filled in before the corresponding real dataset/model exists.
 
 ## Provenance and anti-fabrication checks
 
@@ -265,7 +281,7 @@ Electron window. Users do not need to run `uvicorn` or `npm run dev`.
 GitHub Actions builds:
 
 ```text
-Lucid-Setup-0.3.0-x64.exe
+Lucid-Setup-1.0.0-x64.exe
 ```
 
 The NSIS installer supports a custom install directory and creates Start Menu
@@ -276,7 +292,7 @@ and desktop shortcuts.
 The same workflow builds:
 
 ```text
-Lucid-0.3.0-x86_64.AppImage
+Lucid-1.0.0-x64.AppImage
 ```
 
 ### Installed data location
@@ -296,8 +312,12 @@ workflow, or push a change affecting `desktop/`, `backend/`, or
 `frontend/`.
 
 The workflow builds a self-contained Python backend with PyInstaller, exports
-the Next.js frontend, packages them with Electron, and uploads the installer
-files as GitHub Actions artifacts.
+the Next.js frontend, packages them with Electron, smoke-tests the frozen
+backend/UI, calculates SHA-256 checksums, and uploads the installer files.
+
+Release builds also publish electron-builder update metadata. Installed Lucid
+checks the public `bxane-dev/lucid` GitHub Releases feed for newer versions.
+An update failure never blocks local EEG analysis.
 
 > Windows packages are currently unsigned. Windows SmartScreen may therefore
 > identify the publisher as unknown until a code-signing certificate is added.
