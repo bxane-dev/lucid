@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import sys
+
+# PyInstaller windowed executables on Windows may provide no console streams.
+# Uvicorn/logging still expects file-like stdout/stderr, so route them to the
+# null device instead of allowing startup to fail.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
 import uvicorn
 from fastapi.staticfiles import StaticFiles
