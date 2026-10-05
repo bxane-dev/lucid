@@ -57,6 +57,7 @@ jobs:
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.4"
           python -m pip install -r requirements.txt
           python -m pip install pyinstaller
 
@@ -69,15 +70,23 @@ jobs:
         shell: pwsh
         run: |
           $env:LUCID_STORAGE_DIR = Join-Path $env:RUNNER_TEMP "lucid-smoke"
+          $env:LUCID_DIAGNOSTIC_LOG = Join-Path $env:RUNNER_TEMP "lucid-backend-error.log"
           $exe = (Resolve-Path "backend/dist/lucid-backend/lucid-backend.exe").Path
           $stdout = Join-Path $env:RUNNER_TEMP "lucid-backend-stdout.log"
           $stderr = Join-Path $env:RUNNER_TEMP "lucid-backend-stderr.log"
           $process = Start-Process -FilePath $exe -ArgumentList "--host","127.0.0.1","--port","18765" -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
           try {
             $ready = $false
-            for ($i = 0; $i -lt 60; $i++) {
+            for ($i = 0; $i -lt 45; $i++) {
+              $process.Refresh()
+              if ($process.HasExited) {
+                if (Test-Path $env:LUCID_DIAGNOSTIC_LOG) {
+                  Get-Content $env:LUCID_DIAGNOSTIC_LOG
+                }
+                throw "Packaged Lucid backend exited before becoming healthy with code $($process.ExitCode)."
+              }
               try {
-                $health = Invoke-WebRequest "http://127.0.0.1:18765/health" -UseBasicParsing -TimeoutSec 2
+                $health = Invoke-WebRequest "http://127.0.0.1:18765/health" -UseBasicParsing -TimeoutSec 1
                 if ($health.StatusCode -eq 200) {
                   $ready = $true
                   break
@@ -87,10 +96,9 @@ jobs:
               }
             }
             if (-not $ready) {
-              Write-Host "===== lucid backend stdout ====="
-              if (Test-Path $stdout) { Get-Content $stdout }
-              Write-Host "===== lucid backend stderr ====="
-              if (Test-Path $stderr) { Get-Content $stderr }
+              if (Test-Path $env:LUCID_DIAGNOSTIC_LOG) {
+                Get-Content $env:LUCID_DIAGNOSTIC_LOG
+              }
               throw "Packaged Lucid backend did not become healthy."
             }
             $ui = Invoke-WebRequest "http://127.0.0.1:18765/" -UseBasicParsing -TimeoutSec 10
