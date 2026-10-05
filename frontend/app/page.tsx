@@ -1151,7 +1151,7 @@ export default function Home() {
       </section>
 
       <footer>
-        <span>LUCID v0.2</span>
+        <span>LUCID v1.0.0</span>
         <span>PUBLIC DATA · LOCAL MODELS · SQLITE</span>
         <a
           href="https://nemar.org/dataset/nm000113"

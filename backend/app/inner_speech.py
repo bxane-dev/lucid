@@ -52,7 +52,7 @@ def _load_events(path: Path) -> np.ndarray:
 def _load_task_epochs(
     path: Path,
     window_seconds: float = 2.0,
-) -> np.ndarray:
+) -> tuple[np.ndarray, list[str]]:
     epochs = mne.read_epochs(path, preload=True, verbose="ERROR")
     epochs.pick("eeg")
 
@@ -70,13 +70,13 @@ def _load_task_epochs(
             f"{path} does not contain {window_seconds}s after task onset."
         )
 
-    return normalize_trial(data[..., start:stop])
+    return normalize_trial(data[..., start:stop]), list(epochs.ch_names)
 
 
 def _load_baseline_windows(
     path: Path,
     window_seconds: float = 2.0,
-) -> np.ndarray:
+) -> tuple[np.ndarray, list[str]]:
     """
     Cut non-overlapping windows from the actual recorded baseline epoch.
 
@@ -106,7 +106,54 @@ def _load_baseline_windows(
             f"{path} contains no complete {window_seconds}s baseline windows."
         )
 
-    return normalize_trial(np.stack(windows).astype(np.float32))
+    return (
+        normalize_trial(np.stack(windows).astype(np.float32)),
+        list(epochs.ch_names),
+    )
+
+
+def _align_common_channels(
+    task_data: np.ndarray,
+    task_names: list[str],
+    baseline_data: np.ndarray,
+    baseline_names: list[str],
+    expected_order: list[str] | None = None,
+) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    if len(set(task_names)) != len(task_names):
+        raise ValueError("Task EEG contains duplicate channel names.")
+    if len(set(baseline_names)) != len(baseline_names):
+        raise ValueError("Baseline EEG contains duplicate channel names.")
+
+    baseline_set = set(baseline_names)
+    common = [name for name in task_names if name in baseline_set]
+    if not common:
+        raise ValueError("Task EEG and baseline have no common named EEG channels.")
+
+    if expected_order is not None:
+        if set(common) != set(expected_order):
+            missing = sorted(set(expected_order) - set(common))
+            added = sorted(set(common) - set(expected_order))
+            raise ValueError(
+                "Common EEG channel set changed across sessions: "
+                f"missing={missing} added={added}"
+            )
+        common = list(expected_order)
+
+    task_index = {name: index for index, name in enumerate(task_names)}
+    baseline_index = {
+        name: index for index, name in enumerate(baseline_names)
+    }
+    task_aligned = task_data[
+        :,
+        [task_index[name] for name in common],
+        :,
+    ]
+    baseline_aligned = baseline_data[
+        :,
+        [baseline_index[name] for name in common],
+        :,
+    ]
+    return task_aligned, baseline_aligned, common
 
 
 def prepare_nieto_derivatives(
@@ -134,6 +181,7 @@ def prepare_nieto_derivatives(
     state_recordings: list[str] = []
 
     expected_shape: tuple[int, int] | None = None
+    expected_channel_names: list[str] | None = None
     provenance_sources: list[Path] = []
 
     for eeg_path in eeg_files:
@@ -149,8 +197,20 @@ def prepare_nieto_derivatives(
                 f"events={events_path.exists()}"
             )
 
-        eeg = _load_task_epochs(eeg_path)
-        baseline_windows = _load_baseline_windows(baseline_path)
+        eeg, eeg_channels = _load_task_epochs(eeg_path)
+        baseline_windows, baseline_channels = _load_baseline_windows(
+            baseline_path
+        )
+        eeg, baseline_windows, common_channels = _align_common_channels(
+            eeg,
+            eeg_channels,
+            baseline_windows,
+            baseline_channels,
+            expected_channel_names,
+        )
+        if expected_channel_names is None:
+            expected_channel_names = list(common_channels)
+
         events = _load_events(events_path)
 
         if events.ndim != 2 or events.shape[1] < 2:
@@ -162,12 +222,6 @@ def prepare_nieto_derivatives(
             raise ValueError(
                 f"Speech epoch/event count mismatch in {session_dir}: "
                 f"events={len(events)} eeg={len(eeg)}"
-            )
-
-        if eeg.shape[1:] != baseline_windows.shape[1:]:
-            raise ValueError(
-                f"EEG/baseline window shape mismatch in {session_dir}: "
-                f"{eeg.shape[1:]} vs {baseline_windows.shape[1:]}"
             )
 
         if expected_shape is None:
@@ -266,6 +320,10 @@ def prepare_nieto_derivatives(
                 DEFAULT_PREPROCESS.target_sfreq,
                 dtype=np.float32,
             ),
+            channel_names=np.array(
+                expected_channel_names or [],
+                dtype="U64",
+            ),
         )
 
         manifest_path = write_manifest(
@@ -283,6 +341,7 @@ def prepare_nieto_derivatives(
             "class_counts": counts,
             "labels": labels,
             "channels": int(x.shape[1]),
+            "channel_names": list(expected_channel_names or []),
             "samples": int(x.shape[2]),
             "subjects": sorted(set(groups.tolist())),
             "train_trials": int((split == 0).sum()),

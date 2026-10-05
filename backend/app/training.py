@@ -108,6 +108,11 @@ def read_prepared_metadata(path: Path) -> dict:
                 if groups is not None
                 else []
             ),
+            "channel_names": (
+                archive["channel_names"].tolist()
+                if "channel_names" in archive.files
+                else []
+            ),
         }
 
 

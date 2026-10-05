@@ -21,6 +21,7 @@ class TrialRecord:
     label: str
     subject: str
     recording: str
+    channel_names: tuple[str, ...]
 
 
 def _subject_from_path(path: Path) -> str:
@@ -97,6 +98,7 @@ def extract_trials_from_recording(
                 label,
                 subject,
                 str(edf_path),
+                tuple(raw.ch_names),
             )
         )
 
@@ -189,13 +191,20 @@ def prepare_dataset(
 
     channel_counts = {record.data.shape[0] for record in records}
     sample_counts = {record.data.shape[1] for record in records}
+    channel_orders = {record.channel_names for record in records}
 
-    if len(channel_counts) != 1 or len(sample_counts) != 1:
+    if (
+        len(channel_counts) != 1
+        or len(sample_counts) != 1
+        or len(channel_orders) != 1
+    ):
         raise RuntimeError(
             f"Inconsistent trial shapes: "
-            f"channels={channel_counts}, samples={sample_counts}"
+            f"channels={channel_counts}, samples={sample_counts}, "
+            f"channel_orders={len(channel_orders)}"
         )
 
+    channel_names = list(next(iter(channel_orders)))
     labels = sorted({record.label for record in records})
     label_to_idx = {
         label: index
@@ -238,6 +247,7 @@ def prepare_dataset(
             DEFAULT_PREPROCESS.target_sfreq,
             dtype=np.float32,
         ),
+        channel_names=np.array(channel_names, dtype="U64"),
     )
 
     manifest_path = write_manifest(manifest, output_path)
@@ -245,6 +255,7 @@ def prepare_dataset(
     return {
         "trials": len(records),
         "channels": int(x.shape[1]),
+        "channel_names": channel_names,
         "samples": int(x.shape[2]),
         "labels": labels,
         "subjects": sorted(set(groups.tolist())),

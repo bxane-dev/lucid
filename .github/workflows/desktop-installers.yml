@@ -164,6 +164,12 @@ jobs:
           if (-not $installer) {
             throw "Windows NSIS installer was not produced."
           }
+          if ($installer.Length -ge 2000000000) {
+            throw "Windows installer exceeds the GitHub Release per-file size limit."
+          }
+          if (-not (Test-Path "desktop/dist/latest.yml")) {
+            throw "Windows auto-update metadata latest.yml was not produced."
+          }
           $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLower()
           "$hash  $($installer.Name)" | Set-Content "desktop/dist/windows-installer.sha256"
 
@@ -175,6 +181,13 @@ jobs:
           test -x desktop/dist/linux-unpacked/resources/backend/lucid-backend
           appimage=$(find desktop/dist -maxdepth 1 -name 'Lucid-*.AppImage' -print -quit)
           test -n "$appimage"
+          test -f desktop/dist/latest-linux.yml
+          bytes=$(stat -c%s "$appimage")
+          echo "Linux AppImage bytes: $bytes"
+          if [ "$bytes" -ge 2000000000 ]; then
+            echo "Linux AppImage exceeds the GitHub Release per-file size limit."
+            exit 1
+          fi
           sha256sum "$appimage" > desktop/dist/linux-appimage.sha256
 
       - name: Upload Windows installer
