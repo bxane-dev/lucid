@@ -55,6 +55,17 @@ class RemoteFile:
     bytes: int | None = None
 
 
+def _child_size(child: dict) -> int | None:
+    for key in ("size", "bytes", "size_bytes"):
+        value = child.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
 def registry_entry(dataset_id: str) -> dict:
     try:
         return DATASETS[dataset_id]
@@ -94,11 +105,10 @@ def _walk(dataset_id: str, relative: str) -> list[RemoteFile]:
         if child["kind"] == "dir":
             files.extend(_walk(dataset_id, child_rel))
         elif child["kind"] == "file":
-            size = child.get("size")
             files.append(
                 RemoteFile(
                     relative=child_rel,
-                    bytes=int(size) if size is not None else None,
+                    bytes=_child_size(child),
                 )
             )
     return files
@@ -136,7 +146,7 @@ def plan_download(
         )
 
     files = [
-        RemoteFile(child["name"], int(child["size"]) if child.get("size") else None)
+        RemoteFile(child["name"], _child_size(child))
         for child in root
         if child.get("kind") == "file" and child.get("name") in ROOT_METADATA
     ]
@@ -165,29 +175,67 @@ def download_file(
     destination = destination_root / remote.relative
     destination.parent.mkdir(parents=True, exist_ok=True)
 
-    if destination.exists() and destination.stat().st_size > 0:
-        return False
+    if destination.exists():
+        size = destination.stat().st_size
+        if size > 0 and (remote.bytes is None or size == remote.bytes):
+            return False
+        destination.unlink()
 
     url = f"{base_url(dataset_id)}/{quote(remote.relative, safe='/')}"
     tmp = destination.with_suffix(destination.suffix + ".part")
+    offset = tmp.stat().st_size if tmp.exists() else 0
+    headers = {"Range": f"bytes={offset}-"} if offset else {}
+
     try:
         with requests.get(
             url,
             stream=True,
             timeout=120,
             allow_redirects=True,
+            headers=headers,
         ) as response:
+            if offset and response.status_code == 416:
+                if remote.bytes is not None and offset == remote.bytes:
+                    tmp.replace(destination)
+                    return True
+                tmp.unlink(missing_ok=True)
+                return download_file(
+                    dataset_id,
+                    remote,
+                    destination_root,
+                    on_bytes=on_bytes,
+                )
+
             response.raise_for_status()
-            with tmp.open("wb") as handle:
+
+            resumed = bool(offset and response.status_code == 206)
+            mode = "ab" if resumed else "wb"
+            if not resumed:
+                offset = 0
+
+            with tmp.open(mode) as handle:
                 for chunk in response.iter_content(chunk_size=1024 * 1024):
                     if chunk:
                         handle.write(chunk)
                         if on_bytes:
                             on_bytes(len(chunk))
+
+        final_size = tmp.stat().st_size
+        if final_size <= 0:
+            raise RuntimeError(f"Downloaded empty public EEG file: {remote.relative}")
+        if remote.bytes is not None and final_size != remote.bytes:
+            raise RuntimeError(
+                f"Public file size mismatch for {remote.relative}: "
+                f"expected {remote.bytes}, received {final_size}."
+            )
+
         tmp.replace(destination)
     except Exception:
-        tmp.unlink(missing_ok=True)
+        # Keep a non-empty .part file so a later attempt can resume it.
+        if tmp.exists() and tmp.stat().st_size == 0:
+            tmp.unlink(missing_ok=True)
         raise
+
     return True
 
 
