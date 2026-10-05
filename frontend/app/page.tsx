@@ -439,7 +439,7 @@ export default function Home() {
         <div className="datasetGrid">
           {datasets.map((item) => {
             const busy =
-              datasetJob?.dataset_id === item.id &&
+              datasetJob != null &&
               ["queued", "running"].includes(datasetJob.status);
             return (
               <article className="datasetCard" key={item.id}>
