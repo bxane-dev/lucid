@@ -1,0 +1,237 @@
+name: v1-research-validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/v1-research-request.json"
+
+permissions:
+  contents: read
+
+jobs:
+  word-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install CPU research stack
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.4"
+          python -m pip install -r requirements.txt
+
+      - name: Download all real nm000113 participants
+        working-directory: backend
+        run: python scripts/download_nemar.py --dataset nm000113 --subjects all
+
+      - name: Prepare provenance-tracked word archive
+        working-directory: backend
+        run: python scripts/prepare_dataset.py --dataset nm000113
+
+      - name: Benchmark all six architectures
+        working-directory: backend
+        run: >
+          python scripts/benchmark_models.py
+          --prepared ../dataset/prepared/nm000113_words.npz
+          --epochs 15
+          --batch-size 32
+          --seed 42
+          --architectures
+          eegnet cnn1d cnn_lstm temporal_cnn transformer eeg_conformer
+
+      - name: Verify and stage winning word model
+        run: |
+          python - <<'PY'
+          import json
+          import shutil
+          from pathlib import Path
+          import numpy as np
+
+          prepared = Path("dataset/prepared/nm000113_words.npz")
+          report_path = Path("models/benchmarks/nm000113/words/benchmark.json")
+          report = json.loads(report_path.read_text())
+          archive = np.load(prepared, allow_pickle=False)
+          provenance = str(archive["provenance_sha256"])
+
+          assert report["dataset_id"] == "nm000113"
+          assert report["task"] == "words"
+          assert report["provenance_sha256"] == provenance
+          assert len(report["results"]) == 6
+          assert report["winner"] == report["results"][0]["architecture"]
+
+          winner = Path(report["winner_model_path"])
+          metrics = winner.with_suffix(".metrics.json")
+          assert winner.exists() and metrics.exists()
+
+          evidence = Path("v1-evidence/nm000113")
+          evidence.mkdir(parents=True, exist_ok=True)
+          shutil.copy2(report_path, evidence / "benchmark.json")
+          shutil.copy2(
+              "dataset/prepared/nm000113_words.npz.manifest.json",
+              evidence / "source-manifest.json",
+          )
+          shutil.copy2(winner, evidence / "best-words.pt")
+          shutil.copy2(metrics, evidence / "best-words.metrics.json")
+          (evidence / "selection.json").write_text(
+              json.dumps(
+                  {
+                      "winner": report["winner"],
+                      "provenance_sha256": provenance,
+                      "validation_balanced_accuracy": report["results"][0][
+                          "validation_balanced_accuracy"
+                      ],
+                      "held_out_test_balanced_accuracy": report["results"][0][
+                          "test_balanced_accuracy"
+                      ],
+                  },
+                  indent=2,
+              )
+          )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lucid-v1-word-benchmark
+          path: v1-evidence/nm000113
+          if-no-files-found: error
+
+  inner-speech-state:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install CPU research stack
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.4"
+          python -m pip install -r requirements.txt
+
+      - name: Download all published on003626 derivatives
+        working-directory: backend
+        run: >
+          python scripts/download_nemar.py
+          --dataset on003626
+          --subjects all
+          --derivatives-only
+
+      - name: Prepare real inner-speech and rest archives
+        working-directory: backend
+        run: python scripts/prepare_inner_speech.py
+
+      - name: Train word model from inner-speech trials
+        working-directory: backend
+        run: >
+          python scripts/train.py
+          --prepared ../dataset/prepared/on003626_words.npz
+          --output ../models/v1/on003626_words.pt
+          --task words
+          --architecture eegnet
+          --epochs 25
+          --batch-size 32
+          --seed 42
+
+      - name: Train state model from real resting baseline and inner speech
+        working-directory: backend
+        run: >
+          python scripts/train.py
+          --prepared ../dataset/prepared/on003626_state.npz
+          --output ../models/v1/on003626_state.pt
+          --task state
+          --architecture eegnet
+          --epochs 25
+          --batch-size 32
+          --seed 42
+
+      - name: Verify dual-model provenance and real replay inference
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          import numpy as np
+
+          from app.inference import Predictor
+
+          words = np.load("../dataset/prepared/on003626_words.npz", allow_pickle=False)
+          state = np.load("../dataset/prepared/on003626_state.npz", allow_pickle=False)
+          provenance = str(words["provenance_sha256"])
+
+          assert provenance == str(state["provenance_sha256"])
+          assert set(state["labels"].tolist()) == {"rest", "imagined_speech"}
+          assert set(words["labels"].tolist()) == {"up", "down", "left", "right"}
+
+          word_model = Predictor(Path("../models/v1/on003626_words.pt"))
+          state_model = Predictor(Path("../models/v1/on003626_state.pt"))
+          assert word_model.ready, word_model.load_error
+          assert state_model.ready, state_model.load_error
+
+          test_indices = np.flatnonzero(words["split"] == 2)
+          assert len(test_indices) > 0
+          trial = words["x"][int(test_indices[0])].astype(np.float32)
+
+          word_result = word_model.classify(
+              trial,
+              source_provenance=provenance,
+          )
+          state_result = state_model.classify(
+              trial,
+              source_provenance=provenance,
+          )
+          assert word_result.status == "ok"
+          assert state_result.status == "ok"
+
+          evidence = Path("../v1-evidence/on003626")
+          evidence.mkdir(parents=True, exist_ok=True)
+          for name in ("words", "state"):
+              model = Path(f"../models/v1/on003626_{name}.pt")
+              metrics = model.with_suffix(".metrics.json")
+              assert metrics.exists()
+              payload = json.loads(metrics.read_text())
+              assert payload["provenance_sha256"] == provenance
+
+          summary = {
+              "provenance_sha256": provenance,
+              "word_prediction": word_result.label,
+              "word_confidence": word_result.confidence,
+              "state_prediction": state_result.label,
+              "state_confidence": state_result.confidence,
+              "note": (
+                  "Predictions above are outputs from the trained checkpoints "
+                  "on one held-out recorded trial; they are not hardcoded."
+              ),
+          }
+          (evidence / "dual-model-smoke.json").write_text(
+              json.dumps(summary, indent=2)
+          )
+          PY
+          cp ../dataset/prepared/on003626_words.npz.manifest.json ../v1-evidence/on003626/words-source-manifest.json
+          cp ../dataset/prepared/on003626_state.npz.manifest.json ../v1-evidence/on003626/state-source-manifest.json
+          cp ../models/v1/on003626_words.pt ../v1-evidence/on003626/
+          cp ../models/v1/on003626_words.metrics.json ../v1-evidence/on003626/
+          cp ../models/v1/on003626_state.pt ../v1-evidence/on003626/
+          cp ../models/v1/on003626_state.metrics.json ../v1-evidence/on003626/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lucid-v1-inner-speech-models
+          path: v1-evidence/on003626
+          if-no-files-found: error
