@@ -116,3 +116,22 @@ the measured metrics instead of concealing that limitation.
 The macOS v1.0.1 build is Intel/x64 and unsigned/not notarized. It is not
 described as a native Apple Silicon build. Apple Silicon users may run it via
 Rosetta 2.
+
+
+## v1.0.2 desktop startup validation
+
+- Packaged desktop pre-release run: `37356221038` — **passed**
+- Windows packaged Electron launcher self-test: **passed**
+- Linux AppImage launcher self-test: **passed**
+- macOS packaged Electron launcher self-test: **passed**
+- Windows frozen backend/UI smoke test: **passed**
+- Linux frozen backend/UI smoke test: **passed**
+- macOS frozen backend/UI smoke test: **passed**
+- Windows artifact digest: `sha256:d5c5558eaa1f7ca6354fe91e7ce01b0edacc499f81ab3bcdeda97cd5554f0799`
+- Linux artifact digest: `sha256:25ff6da7edb3f7c1126fc12b51798c0c3f8f823b73ccb5ca1fe40e10ee62189c`
+- macOS artifact digest: `sha256:ea2407f3bee3b8eab8c96381b0bbea0134178fca9d4d80f18f8862b14380118f`
+
+The v1.0.2 launcher opens a visible startup window immediately, handles backend
+spawn failures without an unhandled Electron process error, records startup
+diagnostics, and disables unnecessary GPU acceleration for improved startup
+reliability.
