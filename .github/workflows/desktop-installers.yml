@@ -223,6 +223,34 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run dist:mac
 
+      - name: Self-test packaged Electron app on Windows
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "desktop/dist/win-unpacked/Lucid.exe").Path
+          $process = Start-Process -FilePath $exe -ArgumentList "--self-test" -PassThru -Wait
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged Lucid desktop self-test failed with exit code $($process.ExitCode)."
+          }
+
+      - name: Self-test packaged Electron app on Linux
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=$(find desktop/dist -path '*/lucid' -type f -perm -111 -print -quit)
+          test -n "$exe"
+          xvfb-run -a "$exe" --self-test
+
+      - name: Self-test packaged Electron app on macOS
+        if: matrix.target == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=$(find desktop/dist -path '*/Lucid.app/Contents/MacOS/Lucid' -type f -print -quit)
+          test -n "$exe"
+          "$exe" --self-test
+
       - name: Verify Windows package contents
         if: matrix.target == 'win'
         shell: pwsh
@@ -270,8 +298,8 @@ jobs:
           test -n "$backend"
           test -x "$backend"
 
-          dmg=$(find desktop/dist -maxdepth 1 -name 'Lucid-1.0.1-macOS-x64.dmg' -print -quit)
-          zip=$(find desktop/dist -maxdepth 1 -name 'Lucid-1.0.1-macOS-x64.zip' -print -quit)
+          dmg=$(find desktop/dist -maxdepth 1 -name 'Lucid-1.0.2-macOS-x64.dmg' -print -quit)
+          zip=$(find desktop/dist -maxdepth 1 -name 'Lucid-1.0.2-macOS-x64.zip' -print -quit)
           test -n "$dmg"
           test -n "$zip"
           test -f desktop/dist/latest-mac.yml
@@ -316,8 +344,8 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: |
-            desktop/dist/Lucid-1.0.1-macOS-x64.dmg
-            desktop/dist/Lucid-1.0.1-macOS-x64.zip
+            desktop/dist/Lucid-1.0.2-macOS-x64.dmg
+            desktop/dist/Lucid-1.0.2-macOS-x64.zip
             desktop/dist/macos-dmg.sha256
             desktop/dist/macos-zip.sha256
             desktop/dist/latest-mac.yml
@@ -385,28 +413,28 @@ jobs:
       - name: Inventory release assets
         run: |
           find release-assets -maxdepth 2 -type f -printf '%P\n' | sort
-          test -n "$(find release-assets -name 'Lucid-Setup-1.0.1-*.exe' -print -quit)"
-          test -n "$(find release-assets -name 'Lucid-1.0.1-*.AppImage' -print -quit)"
-          test -n "$(find release-assets -name 'Lucid-1.0.1-macOS-x64.dmg' -print -quit)"
-          test -n "$(find release-assets -name 'Lucid-1.0.1-macOS-x64.zip' -print -quit)"
+          test -n "$(find release-assets -name 'Lucid-Setup-1.0.2-*.exe' -print -quit)"
+          test -n "$(find release-assets -name 'Lucid-1.0.2-*.AppImage' -print -quit)"
+          test -n "$(find release-assets -name 'Lucid-1.0.2-macOS-x64.dmg' -print -quit)"
+          test -n "$(find release-assets -name 'Lucid-1.0.2-macOS-x64.zip' -print -quit)"
           test -f release-assets/latest.yml
           test -f release-assets/latest-linux.yml
           test -f release-assets/latest-mac.yml
 
-      - name: Publish Lucid v1.0.1
+      - name: Publish Lucid v1.0.2
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.1
+          tag_name: v1.0.2
           target_commitish: ${{ github.sha }}
-          name: Lucid v1.0.1
-          body_path: docs/RELEASE_NOTES_v1.0.1.md
+          name: Lucid v1.0.2
+          body_path: docs/RELEASE_NOTES_v1.0.2.md
           draft: false
           prerelease: false
           files: |
-            release-assets/Lucid-Setup-1.0.1-*.exe
-            release-assets/Lucid-1.0.1-*.AppImage
-            release-assets/Lucid-1.0.1-macOS-x64.dmg
-            release-assets/Lucid-1.0.1-macOS-x64.zip
+            release-assets/Lucid-Setup-1.0.2-*.exe
+            release-assets/Lucid-1.0.2-*.AppImage
+            release-assets/Lucid-1.0.2-macOS-x64.dmg
+            release-assets/Lucid-1.0.2-macOS-x64.zip
             release-assets/*.sha256
             release-assets/latest*.yml
             release-assets/*.blockmap
