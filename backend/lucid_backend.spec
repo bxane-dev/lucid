@@ -2,59 +2,49 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import (
-    collect_data_files,
-    collect_dynamic_libs,
-    collect_submodules,
-)
+from PyInstaller.utils.hooks import collect_dynamic_libs
+
 
 SPEC_DIR = Path(SPEC).resolve().parent
 ROOT = SPEC_DIR.parent
 FRONTEND = ROOT / "frontend" / "out"
 
 datas = [(str(FRONTEND), "frontend")]
-binaries = []
-hiddenimports = []
+binaries = collect_dynamic_libs("torch")
 
-EXCLUDED_DATA = [
-    "**/tests/**",
-    "**/test/**",
-    "**/testing/**",
-    "**/benchmarks/**",
-    "**/examples/**",
+# Uvicorn loads its selected loop/protocol implementations by string, so
+# declare the exact implementations used by desktop_server.py.
+hiddenimports = [
+    "edfio",
+    "uvicorn.logging",
+    "uvicorn.loops.asyncio",
+    "uvicorn.lifespan.on",
+    "uvicorn.protocols.http.h11_impl",
+    "uvicorn.protocols.websockets.websockets_impl",
 ]
 
-def runtime_module(name: str) -> bool:
-    lowered = name.lower()
-    blocked = (
-        ".tests",
-        ".test.",
-        ".testing",
-        ".benchmarks",
-        ".examples",
-        ".conftest",
-    )
-    return not any(part in lowered for part in blocked)
-
-for package in (
-    "mne",
-    "sklearn",
-    "scipy",
-    "pandas",
-    "fastapi",
-    "uvicorn",
-    "pydantic",
-):
-    datas += collect_data_files(
-        package,
-        excludes=EXCLUDED_DATA,
-    )
-    hiddenimports += collect_submodules(
-        package,
-        filter=runtime_module,
-    )
-
-binaries += collect_dynamic_libs("torch")
+# Lucid is a headless signal-processing/training backend. Plotting, reports,
+# package test suites, notebooks and docs are never used by the desktop app.
+excludes = [
+    "pytest",
+    "numpy.tests",
+    "pandas.tests",
+    "scipy.tests",
+    "sklearn.tests",
+    "mne.tests",
+    "torch.testing",
+    "mne.viz",
+    "mne.report",
+    "mne.gui",
+    "mne.datasets",
+    "matplotlib",
+    "seaborn",
+    "PIL",
+    "IPython",
+    "jupyter",
+    "notebook",
+    "sphinx",
+]
 
 a = Analysis(
     [str(SPEC_DIR / "desktop_server.py")],
@@ -65,9 +55,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[
-        "pytest",
-    ],
+    excludes=excludes,
     noarchive=False,
 )
 
