@@ -81,8 +81,16 @@ the measured metrics instead of concealing that limitation.
 
 ## Software / packaging gates
 
-- current CI: pending final-head run
-- current Windows/Linux installer verification: pending final-head run
+- Final pre-release CI run: `37349003342` — **passed**
+  - backend compile/tests: passed
+  - frontend production build: passed
+- Final pre-release desktop installer run: `37349003257` — **passed**
+  - Windows x64 frozen backend startup/UI smoke test: passed
+  - Windows NSIS installer build/content/update-metadata/checksum verification: passed
+  - Linux x64 frozen backend startup/UI smoke test: passed
+  - Linux AppImage build/content/update-metadata/checksum verification: passed
+- Windows installer artifact digest: `sha256:481b6c1b5da8c483d340e82889ac16a4c8a6bbd850778038c0cc2529899c57f8`
+- Linux AppImage artifact digest: `sha256:537cbe0af3f5446c76f82ecb3dcb407efb81909b0b8a316849bccfcbff9daf32`
 
 ## Selection method
 
