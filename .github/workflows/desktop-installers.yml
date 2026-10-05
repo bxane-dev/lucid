@@ -8,6 +8,7 @@ on:
       - "backend/**"
       - "frontend/**"
       - ".github/workflows/desktop-installers.yml"
+      - ".github/release-v1.json"
   push:
     branches: [main]
     paths:
@@ -15,6 +16,7 @@ on:
       - "backend/**"
       - "frontend/**"
       - ".github/workflows/desktop-installers.yml"
+      - ".github/release-v1.json"
 
 jobs:
   build:
@@ -183,6 +185,8 @@ jobs:
           path: |
             desktop/dist/Lucid-Setup-*.exe
             desktop/dist/windows-installer.sha256
+            desktop/dist/latest.yml
+            desktop/dist/*.blockmap
           if-no-files-found: error
 
       - name: Upload Linux AppImage
@@ -193,4 +197,49 @@ jobs:
           path: |
             desktop/dist/Lucid-*.AppImage
             desktop/dist/linux-appimage.sha256
+            desktop/dist/latest-linux.yml
+            desktop/dist/*.blockmap
           if-no-files-found: error
+
+
+  release:
+    if: >
+      github.event_name == 'push' &&
+      contains(github.event.head_commit.message, '[release-v1]')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: lucid-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Inventory release assets
+        run: |
+          find release-assets -maxdepth 2 -type f -printf '%P\n' | sort
+          test -n "$(find release-assets -name 'Lucid-Setup-1.0.0-*.exe' -print -quit)"
+          test -n "$(find release-assets -name 'Lucid-1.0.0-*.AppImage' -print -quit)"
+          test -f release-assets/latest.yml
+          test -f release-assets/latest-linux.yml
+
+      - name: Publish Lucid v1.0.0
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          target_commitish: ${{ github.sha }}
+          name: Lucid v1.0.0
+          body_path: docs/RELEASE_NOTES_v1.0.0.md
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/Lucid-Setup-1.0.0-*.exe
+            release-assets/Lucid-1.0.0-*.AppImage
+            release-assets/*.sha256
+            release-assets/latest*.yml
+            release-assets/*.blockmap
