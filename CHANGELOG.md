@@ -2,6 +2,19 @@
 
 All notable Lucid desktop releases are documented here.
 
+## v1.0.2 — 2026-10-05
+
+### Fixed
+- Prevented silent Electron exits when the bundled backend process cannot be spawned.
+- Added a visible startup window while Lucid's local EEG engine initializes.
+- Added immediate startup failure reporting with the diagnostics-folder path.
+- Disabled GPU acceleration to avoid Electron startup failures caused by problematic graphics drivers.
+- Added renderer/process crash logging.
+
+### Validation
+- Added packaged Electron launcher self-tests for Windows, Linux, and macOS.
+- Release CI now requires the actual packaged desktop executable to start its bundled backend successfully.
+
 ## v1.0.1 — 2026-10-05
 
 ### Added
