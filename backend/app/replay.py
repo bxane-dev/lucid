@@ -39,6 +39,15 @@ class PublicEEGReplay:
         value = str(archive["provenance_sha256"])
         return value if len(value) == 64 else None
 
+    def reload(self) -> None:
+        if self._archive is not None:
+            try:
+                self._archive.close()
+            except Exception:
+                pass
+        self._archive = None
+        self._cursor = 0
+
     def _load(self):
         if self._archive is None:
             if not self.path.exists():
