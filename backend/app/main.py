@@ -232,7 +232,7 @@ def prepare_public_dataset(dataset_id: str):
         )
     try:
         return dataset_jobs.start_prepare(dataset_id)
-    except RuntimeError as exc:
+    except (RuntimeError, ValueError) as exc:
         raise HTTPException(
             status_code=409,
             detail=str(exc),
