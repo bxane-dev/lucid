@@ -238,9 +238,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          exe=$(find desktop/dist -path '*/lucid' -type f -perm -111 -print -quit)
-          test -n "$exe"
-          xvfb-run -a "$exe" --self-test
+          appimage=$(find desktop/dist -maxdepth 1 -name 'Lucid-*.AppImage' -print -quit)
+          test -n "$appimage"
+          chmod +x "$appimage"
+          xvfb-run -a "$appimage" --appimage-extract-and-run --self-test
 
       - name: Self-test packaged Electron app on macOS
         if: matrix.target == 'mac'
