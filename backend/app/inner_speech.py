@@ -25,27 +25,62 @@ def _subject_from_derivative(path: Path) -> str:
     raise ValueError(f"Could not determine subject from {path}")
 
 
-def _load_events(path: Path) -> np.ndarray:
+def _load_events(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Return standardized (direction_code, condition_code) arrays.
+
+    Current published derivatives save a CSV table whose meaningful columns
+    are Code and condition. The dataset authors' own analysis helpers use
+    Y[:, 1] for class/direction and Y[:, 2] for condition. Lucid prefers
+    named columns and keeps that published order only as a legacy fallback.
+    """
+    dataframe_error: Exception | None = None
+    try:
+        frame = pd.read_csv(path, index_col=0)
+        lower = {str(column).strip().lower(): column for column in frame.columns}
+
+        if "code" in lower and "condition" in lower:
+            direction = pd.to_numeric(
+                frame[lower["code"]],
+                errors="raise",
+            ).to_numpy(dtype=np.int64)
+            condition = pd.to_numeric(
+                frame[lower["condition"]],
+                errors="raise",
+            ).to_numpy(dtype=np.int64)
+            return direction, condition
+
+        array = frame.to_numpy()
+        if array.ndim == 2 and array.shape[1] >= 3:
+            return (
+                array[:, 1].astype(np.int64),
+                array[:, 2].astype(np.int64),
+            )
+    except Exception as exc:
+        dataframe_error = exc
+
     readers = (
         lambda: pd.read_pickle(path),
         lambda: np.load(path, allow_pickle=True),
-        lambda: pd.read_csv(path, index_col=0),
     )
+    last_error: Exception | None = dataframe_error
 
-    last_error: Exception | None = None
     for reader in readers:
         try:
             events = reader()
             if hasattr(events, "to_numpy"):
                 events = events.to_numpy()
             array = np.asarray(events)
-            if array.ndim == 2:
-                return array
+            if array.ndim == 2 and array.shape[1] >= 3:
+                return (
+                    array[:, 1].astype(np.int64),
+                    array[:, 2].astype(np.int64),
+                )
         except Exception as exc:
             last_error = exc
 
     raise ValueError(
-        f"Could not read event table {path}: {last_error}"
+        f"Could not read standardized event labels from {path}: {last_error}"
     )
 
 
@@ -211,17 +246,18 @@ def prepare_nieto_derivatives(
         if expected_channel_names is None:
             expected_channel_names = list(common_channels)
 
-        events = _load_events(events_path)
+        direction, condition = _load_events(events_path)
 
-        if events.ndim != 2 or events.shape[1] < 2:
+        if len(direction) != len(condition):
             raise ValueError(
-                f"Unexpected event table shape for {events_path}: {events.shape}"
+                f"Direction/condition count mismatch for {events_path}: "
+                f"{len(direction)} vs {len(condition)}"
             )
 
-        if len(events) != len(eeg):
+        if len(direction) != len(eeg):
             raise ValueError(
                 f"Speech epoch/event count mismatch in {session_dir}: "
-                f"events={len(events)} eeg={len(eeg)}"
+                f"events={len(direction)} eeg={len(eeg)}"
             )
 
         if expected_shape is None:
@@ -233,8 +269,6 @@ def prepare_nieto_derivatives(
                 f"in {eeg_path}"
             )
 
-        condition = events[:, 1].astype(int)
-        direction = events[:, 0].astype(int)
         mask = condition == INNER_SPEECH_CONDITION
 
         if not mask.any():
