@@ -329,3 +329,239 @@ footer a:hover { color: #fff; }
     width: 100%;
   }
 }
+
+
+.workbench,
+.modelRegistry {
+  margin-bottom: 12px;
+  padding: 20px;
+}
+.preprocessStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid #252525;
+  margin-bottom: 16px;
+}
+.preprocessStrip > div {
+  min-width: 0;
+  padding: 13px 14px;
+  border-right: 1px solid #252525;
+}
+.preprocessStrip > div:last-child {
+  border-right: 0;
+}
+.preprocessStrip span,
+.trainControls label > span,
+.trainingMetric span,
+.modelRow span {
+  display: block;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.preprocessStrip strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 550;
+}
+.trainingProgress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  border: 1px solid #3a3a3a;
+  background: #101010;
+  padding: 13px 14px;
+  margin-bottom: 16px;
+}
+.trainingProgress > div:first-child strong,
+.trainingProgress > div:first-child span {
+  display: block;
+}
+.trainingProgress > div:first-child strong {
+  font-size: 11px;
+  letter-spacing: .08em;
+}
+.trainingProgress > div:first-child span {
+  margin-top: 5px;
+  color: #858585;
+  font-size: 11px;
+}
+.trainingMetric {
+  min-width: 100px;
+  text-align: right;
+}
+.trainingMetric strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
+}
+.trainingProgress button,
+.workbenchActions button,
+.modelRow button {
+  min-height: 38px;
+  border: 1px solid #dfdfdf;
+  background: #dfdfdf;
+  color: #080808;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  cursor: pointer;
+}
+.trainingProgress button {
+  border-color: #444;
+  background: transparent;
+  color: #bbb;
+}
+.trainControls {
+  display: grid;
+  grid-template-columns: 1.2fr 1.3fr 1.3fr .65fr;
+  gap: 10px;
+  margin: 14px 0;
+}
+.trainControls label {
+  min-width: 0;
+}
+.trainControls select,
+.trainControls input {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 7px;
+  border: 1px solid #333;
+  border-radius: 0;
+  background: #0a0a0a;
+  color: #ededed;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.trainControls select:focus,
+.trainControls input:focus {
+  border-color: #777;
+}
+.workbenchActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.workbenchActions button.secondaryButton {
+  border-color: #393939;
+  background: #111;
+  color: #ccc;
+}
+.workbenchActions button:disabled,
+.modelRow button:disabled {
+  cursor: not-allowed;
+  opacity: .4;
+}
+.workbenchActions > span {
+  color: #6f6f6f;
+  font-size: 11px;
+}
+.archiveSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1px solid #222;
+  color: #777;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+.modelTable {
+  border: 1px solid #252525;
+}
+.modelRow {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.5fr) minmax(90px, .6fr) minmax(90px, .6fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 14px;
+  border-bottom: 1px solid #222;
+}
+.modelRow:last-child {
+  border-bottom: 0;
+}
+.modelRow > div {
+  min-width: 0;
+}
+.modelRow > div:first-child strong,
+.modelRow > div:first-child span {
+  display: block;
+}
+.modelRow > div:first-child strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.modelRow > div:first-child span {
+  margin-top: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.modelRow > div:not(:first-child) strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 14px;
+}
+.modelRow button.activeModelButton {
+  border-color: #4d4d4d;
+  background: #141414;
+  color: #aaa;
+}
+@media (max-width: 900px) {
+  .preprocessStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .preprocessStrip > div:nth-child(2) {
+    border-right: 0;
+  }
+  .preprocessStrip > div:nth-child(-n+2) {
+    border-bottom: 1px solid #252525;
+  }
+  .trainControls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .modelRow {
+    grid-template-columns: minmax(0, 1fr) minmax(80px, auto) minmax(80px, auto);
+  }
+  .modelRow button {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 560px) {
+  .workbench,
+  .modelRegistry {
+    padding: 14px;
+  }
+  .preprocessStrip,
+  .trainControls {
+    grid-template-columns: 1fr;
+  }
+  .preprocessStrip > div {
+    border-right: 0;
+    border-bottom: 1px solid #252525;
+  }
+  .preprocessStrip > div:last-child {
+    border-bottom: 0;
+  }
+  .trainingProgress,
+  .modelRow {
+    grid-template-columns: 1fr;
+  }
+  .trainingMetric {
+    text-align: left;
+  }
+  .trainingProgress button,
+  .workbenchActions button,
+  .modelRow button {
+    width: 100%;
+  }
+}
