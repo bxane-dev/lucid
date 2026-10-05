@@ -1,6 +1,6 @@
 {
   "name": "lucid-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Lucid public EEG analyzer desktop application",
   "main": "main.js",
@@ -8,7 +8,8 @@
   "license": "MIT",
   "scripts": {
     "dist:win": "electron-builder --win nsis --x64 --publish never",
-    "dist:linux": "electron-builder --linux AppImage --x64 --publish never"
+    "dist:linux": "electron-builder --linux AppImage --x64 --publish never",
+    "dist:mac": "electron-builder --mac dmg zip --x64 --publish never"
   },
   "devDependencies": {
     "electron": "33.4.11",
@@ -65,7 +66,25 @@
         "owner": "bxane-dev",
         "repo": "lucid"
       }
-    ]
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.education",
+      "artifactName": "Lucid-${version}-macOS-${arch}.${ext}"
+    }
   },
   "dependencies": {
     "electron-updater": "6.8.9"
