@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import (
     FastAPI,
+    HTTPException,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -15,9 +16,16 @@ from .config import (
     DEFAULT_STATE_MODEL_PATH,
 )
 from .db import init_db, log_prediction
+from .dataset_jobs import dataset_jobs
+from .public_data import DATASETS
 from .inference import Predictor
 from .replay import PublicEEGReplay
-from .schemas import Prediction, StatusResponse
+from .schemas import (
+    DatasetDownloadRequest,
+    DatasetJobResponse,
+    Prediction,
+    StatusResponse,
+)
 
 
 predictor = Predictor(DEFAULT_MODEL_PATH)
@@ -114,6 +122,94 @@ def status():
             else None
         ),
     )
+
+
+
+
+@app.get("/api/datasets")
+def datasets():
+    return {
+        "datasets": dataset_jobs.list_datasets(),
+        "rule": (
+            "Only Lucid's verified public dataset registry can be downloaded. "
+            "No synthetic EEG or arbitrary data source is substituted."
+        ),
+    }
+
+
+@app.post(
+    "/api/datasets/{dataset_id}/download",
+    response_model=DatasetJobResponse,
+)
+def download_public_dataset(
+    dataset_id: str,
+    request: DatasetDownloadRequest,
+):
+    if dataset_id not in DATASETS:
+        raise HTTPException(
+            status_code=404,
+            detail="Unsupported public dataset.",
+        )
+
+    meta = DATASETS[dataset_id]
+    subjects = request.subjects
+    if subjects is None and request.mode == "recommended":
+        subjects = list(meta["recommended_subjects"])
+    elif subjects is None and request.mode == "all":
+        subjects = None
+
+    try:
+        return dataset_jobs.start_download(
+            dataset_id,
+            subjects=subjects,
+            derivatives_only=bool(meta["derivatives_only"]),
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post(
+    "/api/datasets/{dataset_id}/prepare",
+    response_model=DatasetJobResponse,
+)
+def prepare_public_dataset(dataset_id: str):
+    if dataset_id not in DATASETS:
+        raise HTTPException(
+            status_code=404,
+            detail="Unsupported public dataset.",
+        )
+    try:
+        return dataset_jobs.start_prepare(dataset_id)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/api/dataset-jobs/{job_id}",
+    response_model=DatasetJobResponse,
+)
+def dataset_job(job_id: str):
+    job = dataset_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Dataset job not found.",
+        )
+
+    if (
+        job["kind"] == "prepare"
+        and job["status"] == "completed"
+        and job["dataset_id"] == DEFAULT_DATASET_ID
+    ):
+        replay.reload()
+
+    return job
 
 
 @app.post("/api/reload-model")
