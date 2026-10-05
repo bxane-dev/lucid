@@ -12,6 +12,8 @@ let backend = null;
 let mainWindow = null;
 let backendUrl = null;
 let backendLogHandle = null;
+let startupWindow = null;
+let backendStartError = null;
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -53,6 +55,23 @@ function waitForBackend(url, timeoutMs = 60000) {
 
   return new Promise((resolve, reject) => {
     const retry = () => {
+      if (backendStartError) {
+        reject(
+          new Error(
+            "Lucid could not launch its local EEG engine: " +
+            backendStartError.message
+          )
+        );
+        return;
+      }
+      if (backend && backend.exitCode !== null) {
+        reject(
+          new Error(
+            "Lucid's local EEG engine exited during startup. See the Lucid logs folder for details."
+          )
+        );
+        return;
+      }
       if (Date.now() - started >= timeoutMs) {
         reject(new Error("Lucid backend did not start in time."));
         return;
@@ -94,6 +113,54 @@ function appendDesktopLog(message) {
   }
 }
 
+function createStartupWindow() {
+  startupWindow = new BrowserWindow({
+    width: 520,
+    height: 300,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    show: false,
+    backgroundColor: "#070707",
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+
+  const html = encodeURIComponent(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          html,body{margin:0;width:100%;height:100%;background:#070707;color:#f5f5f5;font-family:Arial,sans-serif}
+          body{display:grid;place-items:center}
+          main{width:78%}
+          h1{font-size:34px;letter-spacing:.18em;margin:0 0 18px;font-weight:600}
+          p{color:#9b9b9b;margin:0 0 18px;line-height:1.55}
+          .bar{height:2px;background:#222;overflow:hidden}
+          .bar:after{content:"";display:block;height:100%;width:38%;background:#ddd;animation:load 1.1s ease-in-out infinite alternate}
+          @keyframes load{from{transform:translateX(-100%)}to{transform:translateX(260%)}}
+        </style>
+      </head>
+      <body>
+        <main>
+          <h1>LUCID</h1>
+          <p>Starting local EEG engine…</p>
+          <div class="bar"></div>
+        </main>
+      </body>
+    </html>
+  `);
+
+  startupWindow.loadURL("data:text/html;charset=utf-8," + html);
+  startupWindow.once("ready-to-show", () => startupWindow.show());
+}
+
 function startBackend(port) {
   const storage = path.join(app.getPath("userData"), "data");
   const logs = path.join(app.getPath("userData"), "logs");
@@ -101,8 +168,16 @@ function startBackend(port) {
   const backendLog = path.join(logs, "lucid-backend.log");
   backendLogHandle = fs.openSync(backendLog, "a");
 
+  const executable = backendPath();
+  appendDesktopLog("backend path=" + executable);
+  if (!fs.existsSync(executable)) {
+    throw new Error(
+      "Lucid backend executable is missing from the installation. Reinstall Lucid."
+    );
+  }
+
   backend = spawn(
-    backendPath(),
+    executable,
     ["--host", HOST, "--port", String(port)],
     {
       env: {
@@ -115,8 +190,15 @@ function startBackend(port) {
     }
   );
 
-  backend.on("exit", (code) => {
-    appendDesktopLog("backend exit code=" + String(code));
+  backend.on("error", (error) => {
+    backendStartError = error;
+    appendDesktopLog("backend spawn error: " + String(error));
+  });
+
+  backend.on("exit", (code, signal) => {
+    appendDesktopLog(
+      "backend exit code=" + String(code) + " signal=" + String(signal)
+    );
     if (!app.isQuitting && code !== 0 && mainWindow) {
       dialog.showErrorBox(
         "Lucid backend stopped",
@@ -188,7 +270,22 @@ app.on("second-instance", () => {
   }
 });
 
+process.on("uncaughtException", (error) => {
+  appendDesktopLog("uncaught exception: " + String(error?.stack || error));
+  try {
+    dialog.showErrorBox(
+      "Lucid encountered an error",
+      error instanceof Error ? error.message : String(error)
+    );
+  } catch {}
+});
+
+process.on("unhandledRejection", (error) => {
+  appendDesktopLog("unhandled rejection: " + String(error));
+});
+
 app.whenReady().then(async () => {
+  createStartupWindow();
   try {
     const port = await findFreePort();
     backendUrl = "http://" + HOST + ":" + port;
@@ -198,6 +295,11 @@ app.whenReady().then(async () => {
     appendDesktopLog("Lucid desktop started on local port " + String(port));
     configureAutoUpdater();
   } catch (error) {
+    appendDesktopLog("startup failure: " + String(error?.stack || error));
+    if (startupWindow && !startupWindow.isDestroyed()) {
+      startupWindow.close();
+      startupWindow = null;
+    }
     dialog.showErrorBox(
       "Lucid could not start",
       error instanceof Error ? error.message : String(error)
@@ -208,6 +310,9 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   app.isQuitting = true;
+  if (startupWindow && !startupWindow.isDestroyed()) {
+    startupWindow.destroy();
+  }
   if (backend && !backend.killed) {
     backend.kill();
   }
