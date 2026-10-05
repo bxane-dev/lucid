@@ -1,5 +1,8 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "mode": "release",
-  "note": "All measured research, CI, frozen-backend, installer, checksum, update-metadata, and size gates have passed."
+  "validation": {
+    "three_platform_preflight_run": 37352104962
+  },
+  "note": "Windows, Linux, and macOS desktop artifacts are verified. Publish with changelog."
 }
