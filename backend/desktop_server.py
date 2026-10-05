@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import sys
+import traceback
 
 # PyInstaller windowed executables on Windows may provide no console streams.
 # Uvicorn/logging still expects file-like stdout/stderr, so route them to the
@@ -16,7 +17,16 @@ if sys.stderr is None:
 import uvicorn
 from fastapi.staticfiles import StaticFiles
 
-from app.main import app
+def write_diagnostic() -> None:
+    path = os.getenv("LUCID_DIAGNOSTIC_LOG")
+    if not path:
+        return
+    try:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(traceback.format_exc(), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def frontend_dir() -> Path:
@@ -27,6 +37,8 @@ def frontend_dir() -> Path:
 
 
 def main() -> None:
+    from app.main import app
+
     parser = argparse.ArgumentParser(description="Lucid desktop server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
@@ -54,4 +66,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BaseException:
+        write_diagnostic()
+        raise
