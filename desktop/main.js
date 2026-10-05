@@ -341,6 +341,13 @@ app.whenReady().then(async () => {
       startupWindow.close();
       startupWindow = null;
     }
+
+    if (selfTest) {
+      process.exitCode = 1;
+      app.quit();
+      return;
+    }
+
     const logs = path.join(app.getPath("userData"), "logs");
     dialog.showErrorBox(
       "Lucid could not start",
