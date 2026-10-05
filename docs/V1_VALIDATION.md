@@ -44,7 +44,40 @@ The state archive uses distinct non-overlapping windows from the dataset's publi
 
 ## nm000113 all-subject six-architecture benchmark
 
-Pending completion of the active all-15-participant benchmark. The final winner and all six measured validation/test scores will be inserted here from the workflow output.
+- Workflow run: `37343081991`
+- Word-benchmark job: `111874781963` — **passed**
+- Participants: **15** (`sub-01` through `sub-15`)
+- Prepared trials: **5,127**
+- Channels: **64**
+- Samples per window: **256**
+- Train trials: **3,697**
+- Validation trials: **762**
+- Test trials: **668**
+- Source provenance SHA-256: `e7b4d1fb43de4b33ce27909b391886ad87eea54b81bc3345dcd83acadf41c0dd`
+- Epochs per architecture: **5**
+- Selection metric: **validation balanced accuracy**
+- Validation-selected winner: **EEG Conformer**
+
+| Rank | Architecture | Best epoch | Validation balanced accuracy | Held-out test balanced accuracy |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | EEG Conformer | 4 | **0.2229575571** | 0.1781203008 |
+| 2 | Temporal CNN | 3 | 0.2179322396 | **0.2017473917** |
+| 3 | CNN + LSTM | 1 | 0.2178306114 | 0.1867325290 |
+| 4 | Transformer | 5 | 0.2131472273 | 0.1941761380 |
+| 5 | EEGNet | 3 | 0.2054225444 | 0.1760453459 |
+| 6 | 1D CNN | 4 | 0.1996824994 | 0.1793670222 |
+
+The winner is selected strictly from validation balanced accuracy. Temporal CNN
+happened to have the highest test balanced accuracy in this short run, but the
+test set is intentionally not used to change the selected winner.
+
+Winner checkpoint SHA-256:
+`397df4b23bd0fd7c223203e12da2b604ccfcf59b341937050e68ab14f0eed0ff`.
+
+The five-class chance baseline is 0.20. These short five-epoch results therefore
+show that the current cross-participant word-decoding benchmark is weak and
+should not be described as reliable thought or speech decoding. Lucid exposes
+the measured metrics instead of concealing that limitation.
 
 ## Software / packaging gates
 
