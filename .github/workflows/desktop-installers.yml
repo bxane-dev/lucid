@@ -58,6 +58,64 @@ jobs:
         working-directory: backend
         run: pyinstaller --noconfirm --clean lucid_backend.spec
 
+      - name: Smoke test packaged backend on Windows
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: |
+          $env:LUCID_STORAGE_DIR = Join-Path $env:RUNNER_TEMP "lucid-smoke"
+          $exe = (Resolve-Path "backend/dist/lucid-backend/lucid-backend.exe").Path
+          $process = Start-Process -FilePath $exe -ArgumentList "--host","127.0.0.1","--port","18765" -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 60; $i++) {
+              try {
+                $health = Invoke-WebRequest "http://127.0.0.1:18765/health" -UseBasicParsing -TimeoutSec 2
+                if ($health.StatusCode -eq 200) {
+                  $ready = $true
+                  break
+                }
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if (-not $ready) {
+              throw "Packaged Lucid backend did not become healthy."
+            }
+            $ui = Invoke-WebRequest "http://127.0.0.1:18765/" -UseBasicParsing -TimeoutSec 10
+            if ($ui.StatusCode -ne 200 -or $ui.Content.Length -lt 100) {
+              throw "Packaged Lucid frontend was not served correctly."
+            }
+          } finally {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Smoke test packaged backend on Linux
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LUCID_STORAGE_DIR="$RUNNER_TEMP/lucid-smoke"
+          ./backend/dist/lucid-backend/lucid-backend --host 127.0.0.1 --port 18765 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:18765/health >/tmp/lucid-health.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo "Packaged Lucid backend did not become healthy."
+            exit 1
+          fi
+
+          curl --fail --silent --show-error http://127.0.0.1:18765/ >/tmp/lucid-index.html
+          test "$(wc -c </tmp/lucid-index.html)" -gt 100
+
       - name: Install desktop packager
         working-directory: desktop
         run: npm install
@@ -72,12 +130,39 @@ jobs:
         working-directory: desktop
         run: npm run dist:linux
 
+      - name: Verify Windows package contents
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: |
+          $backend = "desktop/dist/win-unpacked/resources/backend/lucid-backend.exe"
+          if (-not (Test-Path $backend)) {
+            throw "Packaged Windows app is missing the Lucid backend executable."
+          }
+          $installer = Get-ChildItem "desktop/dist" -Filter "Lucid-Setup-*.exe" | Select-Object -First 1
+          if (-not $installer) {
+            throw "Windows NSIS installer was not produced."
+          }
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($installer.Name)" | Set-Content "desktop/dist/windows-installer.sha256"
+
+      - name: Verify Linux package contents
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x desktop/dist/linux-unpacked/resources/backend/lucid-backend
+          appimage=$(find desktop/dist -maxdepth 1 -name 'Lucid-*.AppImage' -print -quit)
+          test -n "$appimage"
+          sha256sum "$appimage" > desktop/dist/linux-appimage.sha256
+
       - name: Upload Windows installer
         if: matrix.target == 'win'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: desktop/dist/*.exe
+          path: |
+            desktop/dist/Lucid-Setup-*.exe
+            desktop/dist/windows-installer.sha256
           if-no-files-found: error
 
       - name: Upload Linux AppImage
@@ -85,5 +170,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: desktop/dist/*.AppImage
+          path: |
+            desktop/dist/Lucid-*.AppImage
+            desktop/dist/linux-appimage.sha256
           if-no-files-found: error
