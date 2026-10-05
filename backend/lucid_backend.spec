@@ -8,22 +8,31 @@ from PyInstaller.utils.hooks import (
     collect_submodules,
 )
 
-ROOT = Path(SPECPATH).parent
+SPEC_DIR = Path(SPEC).resolve().parent
+ROOT = SPEC_DIR.parent
 FRONTEND = ROOT / "frontend" / "out"
 
 datas = [(str(FRONTEND), "frontend")]
 binaries = []
 hiddenimports = []
 
-for package in ("mne", "sklearn", "scipy", "pandas"):
+for package in (
+    "mne",
+    "sklearn",
+    "scipy",
+    "pandas",
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+):
     datas += collect_data_files(package)
     hiddenimports += collect_submodules(package)
 
 binaries += collect_dynamic_libs("torch")
 
 a = Analysis(
-    ["desktop_server.py"],
-    pathex=[str(Path(SPECPATH))],
+    [str(SPEC_DIR / "desktop_server.py")],
+    pathex=[str(SPEC_DIR)],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
