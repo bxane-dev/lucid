@@ -36,6 +36,7 @@ hiddenimports = [
     for name in collect_submodules("mne")
     if not name.startswith(MNE_EXCLUDED_PREFIXES)
 ]
+hiddenimports += collect_submodules("torch.testing")
 hiddenimports += [
     "edfio",
     "uvicorn.logging",
