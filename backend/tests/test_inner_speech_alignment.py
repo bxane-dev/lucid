@@ -1,7 +1,8 @@
 import numpy as np
+import pandas as pd
 import pytest
 
-from app.inner_speech import _align_common_channels
+from app.inner_speech import _align_common_channels, _load_events
 
 
 def test_inner_speech_alignment_uses_named_common_channels():
@@ -49,3 +50,22 @@ def test_inner_speech_alignment_rejects_duplicate_names():
             baseline,
             ["C3", "C4"],
         )
+
+
+
+def test_current_derivative_event_table_uses_code_and_condition(tmp_path):
+    path = tmp_path / "sub-01_ses-01_events.dat"
+    frame = pd.DataFrame(
+        {
+            "Time": [100, 200, 300, 400],
+            "Code": [0, 1, 2, 3],
+            "condition": [0, 1, 2, 1],
+            "block": [1, 1, 1, 1],
+        }
+    )
+    frame.to_csv(path)
+
+    direction, condition = _load_events(path)
+
+    np.testing.assert_array_equal(direction, np.array([0, 1, 2, 3]))
+    np.testing.assert_array_equal(condition, np.array([0, 1, 2, 1]))
