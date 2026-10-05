@@ -67,3 +67,62 @@ class DatasetJobResponse(BaseModel):
     result: dict | None = None
     created_at: float
     updated_at: float
+
+
+class TrainingRequest(BaseModel):
+    dataset_id: str
+    task: Literal["words", "state"] = "words"
+    kind: Literal["train", "benchmark"] = "train"
+    architecture: str | None = "eegnet"
+    architectures: list[str] | None = None
+    epochs: int = Field(default=25, ge=1, le=500)
+    batch_size: int = Field(default=32, ge=1, le=1024)
+    seed: int = 42
+    auto_activate: bool = True
+
+
+class TrainingJobResponse(BaseModel):
+    id: str
+    kind: Literal["train", "benchmark"]
+    dataset_id: str
+    task: Literal["words", "state"]
+    architecture: str | None = None
+    architectures: list[str] | None = None
+    epochs: int
+    batch_size: int
+    seed: int
+    auto_activate: bool
+    status: Literal[
+        "queued",
+        "running",
+        "completed",
+        "failed",
+        "cancelled",
+    ]
+    cancel_requested: bool = False
+    progress: dict = Field(default_factory=dict)
+    result: dict | None = None
+    error: str | None = None
+    created_at: float
+    updated_at: float
+
+
+class DatasetSelectRequest(BaseModel):
+    dataset_id: str
+
+
+class ModelActivateResponse(BaseModel):
+    id: str
+    path: str
+    dataset_id: str
+    task: str
+    architecture: str
+    provenance_sha256: str
+    checkpoint_sha256: str
+    best_validation_balanced_accuracy: float | None = None
+    test_accuracy: float | None = None
+    test_balanced_accuracy: float | None = None
+    best_epoch: int | None = None
+    labels: list[str] = Field(default_factory=list)
+    active: bool
+    model_version: str | None = None
