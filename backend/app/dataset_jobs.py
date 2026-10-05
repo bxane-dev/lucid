@@ -56,11 +56,10 @@ class DatasetJobManager:
             for existing in self._jobs.values():
                 if (
                     existing["dataset_id"] == dataset_id
-                    and existing["kind"] == "download"
                     and existing["status"] in {"queued", "running"}
                 ):
                     raise RuntimeError(
-                        "A download for this dataset is already running."
+                        "Another operation for this dataset is already running."
                     )
             self._jobs[job_id] = job
 
@@ -119,11 +118,10 @@ class DatasetJobManager:
             for existing in self._jobs.values():
                 if (
                     existing["dataset_id"] == dataset_id
-                    and existing["kind"] == "prepare"
                     and existing["status"] in {"queued", "running"}
                 ):
                     raise RuntimeError(
-                        "Preparation for this dataset is already running."
+                        "Another operation for this dataset is already running."
                     )
             self._jobs[job_id] = job
 
