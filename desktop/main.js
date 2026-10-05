@@ -3,6 +3,7 @@ const { spawn } = require("child_process");
 const http = require("http");
 const net = require("net");
 const path = require("path");
+const fs = require("fs");
 const { autoUpdater } = require("electron-updater");
 
 const HOST = "127.0.0.1";
@@ -10,6 +11,7 @@ const HOST = "127.0.0.1";
 let backend = null;
 let mainWindow = null;
 let backendUrl = null;
+let backendLogHandle = null;
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -79,8 +81,25 @@ function waitForBackend(url, timeoutMs = 60000) {
   });
 }
 
+function appendDesktopLog(message) {
+  try {
+    const logs = path.join(app.getPath("userData"), "logs");
+    fs.mkdirSync(logs, { recursive: true });
+    fs.appendFileSync(
+      path.join(logs, "lucid-desktop.log"),
+      new Date().toISOString() + " " + message + "\n"
+    );
+  } catch {
+    // Logging must never stop the app from starting.
+  }
+}
+
 function startBackend(port) {
   const storage = path.join(app.getPath("userData"), "data");
+  const logs = path.join(app.getPath("userData"), "logs");
+  fs.mkdirSync(logs, { recursive: true });
+  const backendLog = path.join(logs, "lucid-backend.log");
+  backendLogHandle = fs.openSync(backendLog, "a");
 
   backend = spawn(
     backendPath(),
@@ -88,14 +107,16 @@ function startBackend(port) {
     {
       env: {
         ...process.env,
-        LUCID_STORAGE_DIR: storage
+        LUCID_STORAGE_DIR: storage,
+        LUCID_DIAGNOSTIC_LOG: path.join(logs, "lucid-backend-crash.log")
       },
       windowsHide: true,
-      stdio: "ignore"
+      stdio: ["ignore", backendLogHandle, backendLogHandle]
     }
   );
 
   backend.on("exit", (code) => {
+    appendDesktopLog("backend exit code=" + String(code));
     if (!app.isQuitting && code !== 0 && mainWindow) {
       dialog.showErrorBox(
         "Lucid backend stopped",
@@ -111,8 +132,14 @@ function configureAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on("error", () => {
-    // Update failures never block local EEG research workflows.
+  autoUpdater.on("error", (error) => {
+    appendDesktopLog("update error: " + String(error));
+  });
+  autoUpdater.on("update-available", (info) => {
+    appendDesktopLog("update available: " + String(info.version));
+  });
+  autoUpdater.on("update-downloaded", (info) => {
+    appendDesktopLog("update downloaded: " + String(info.version));
   });
 
   setTimeout(() => {
@@ -136,13 +163,19 @@ function createWindow(url) {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url: externalUrl }) => {
-    if (
-      (externalUrl.startsWith("https://") || externalUrl.startsWith("http://")) &&
-      !externalUrl.startsWith(url)
-    ) {
+    if (externalUrl.startsWith("https://")) {
       shell.openExternal(externalUrl);
     }
     return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("will-navigate", (event, navigationUrl) => {
+    if (!navigationUrl.startsWith(url)) {
+      event.preventDefault();
+      if (navigationUrl.startsWith("https://")) {
+        shell.openExternal(navigationUrl);
+      }
+    }
   });
 
   mainWindow.loadURL(url);
@@ -162,6 +195,7 @@ app.whenReady().then(async () => {
     startBackend(port);
     await waitForBackend(backendUrl);
     createWindow(backendUrl);
+    appendDesktopLog("Lucid desktop started on local port " + String(port));
     configureAutoUpdater();
   } catch (error) {
     dialog.showErrorBox(
@@ -176,6 +210,14 @@ app.on("before-quit", () => {
   app.isQuitting = true;
   if (backend && !backend.killed) {
     backend.kill();
+  }
+  if (backendLogHandle !== null) {
+    try {
+      fs.closeSync(backendLogHandle);
+    } catch {
+      // Ignore shutdown logging errors.
+    }
+    backendLogHandle = null;
   }
 });
 
