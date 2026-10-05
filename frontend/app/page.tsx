@@ -18,6 +18,42 @@ type Prediction = {
   message: string | null;
 };
 
+type DatasetInfo = {
+  id: string;
+  title: string;
+  description: string;
+  version: string;
+  license: string;
+  doi: string;
+  approx_size: string;
+  tasks: string[];
+  labels: string[];
+  recommended_subjects: string[];
+  derivatives_only: boolean;
+  downloaded: boolean;
+  downloaded_files: number;
+  bytes_on_disk: number;
+  partial_files: number;
+  word_prepared: boolean;
+  state_prepared: boolean;
+};
+
+type DatasetJob = {
+  id: string;
+  kind: "download" | "prepare";
+  dataset_id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  progress: {
+    phase?: string;
+    files_done?: number;
+    files_total?: number;
+    bytes_downloaded?: number;
+    bytes_expected?: number | null;
+    message?: string;
+  };
+  error: string | null;
+};
+
 type ApiStatus = {
   data_ready: boolean;
   model_ready: boolean;
@@ -59,6 +95,18 @@ function runtimeEndpoints() {
 }
 
 const MAX_POINTS = 180;
+
+function humanBytes(value: number | null | undefined) {
+  if (!value) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = value;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
 
 function pct(value: number | null | undefined) {
   return value == null ? "—" : `${(value * 100).toFixed(1)}%`;
@@ -126,6 +174,9 @@ function Signal({
 
 export default function Home() {
   const [status, setStatus] = useState<ApiStatus | null>(null);
+  const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
+  const [datasetJob, setDatasetJob] = useState<DatasetJob | null>(null);
+  const [datasetMessage, setDatasetMessage] = useState<string | null>(null);
   const [connection, setConnection] = useState<
     "connecting" | "live" | "offline"
   >("connecting");
@@ -142,10 +193,22 @@ export default function Home() {
   useEffect(() => {
     const endpoints = runtimeEndpoints();
 
-    fetch(`${endpoints.api}/api/status`)
-      .then((response) => response.json())
-      .then(setStatus)
-      .catch(() => setStatus(null));
+    const refreshStatus = () => {
+      fetch(`${endpoints.api}/api/status`)
+        .then((response) => response.json())
+        .then(setStatus)
+        .catch(() => setStatus(null));
+    };
+
+    const refreshDatasets = () => {
+      fetch(`${endpoints.api}/api/datasets`)
+        .then((response) => response.json())
+        .then((payload) => setDatasets(payload.datasets ?? []))
+        .catch(() => setDatasets([]));
+    };
+
+    refreshStatus();
+    refreshDatasets();
 
     let closed = false;
     let socket: WebSocket | null = null;
@@ -217,6 +280,73 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!datasetJob || !["queued", "running"].includes(datasetJob.status)) {
+      return;
+    }
+
+    const endpoints = runtimeEndpoints();
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await fetch(
+          `${endpoints.api}/api/dataset-jobs/${datasetJob.id}`,
+        );
+        const next = (await response.json()) as DatasetJob;
+        setDatasetJob(next);
+
+        if (next.status === "completed" || next.status === "failed") {
+          window.clearInterval(timer);
+          setDatasetMessage(
+            next.status === "completed"
+              ? `${next.kind === "download" ? "Download" : "Preparation"} completed for ${next.dataset_id}.`
+              : next.error ?? "Dataset operation failed.",
+          );
+
+          const [datasetsResponse, statusResponse] = await Promise.all([
+            fetch(`${endpoints.api}/api/datasets`),
+            fetch(`${endpoints.api}/api/status`),
+          ]);
+          const datasetPayload = await datasetsResponse.json();
+          setDatasets(datasetPayload.datasets ?? []);
+          setStatus(await statusResponse.json());
+        }
+      } catch {
+        setDatasetMessage("Could not read dataset job status.");
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [datasetJob?.id, datasetJob?.status]);
+
+  async function startDatasetJob(
+    datasetId: string,
+    kind: "download" | "prepare",
+    mode: "recommended" | "all" = "recommended",
+  ) {
+    const endpoints = runtimeEndpoints();
+    setDatasetMessage(null);
+
+    try {
+      const response = await fetch(
+        `${endpoints.api}/api/datasets/${datasetId}/${kind}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: kind === "download" ? JSON.stringify({ mode }) : undefined,
+        },
+      );
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail ?? "Dataset operation could not start.");
+      }
+      setDatasetJob(payload);
+    } catch (error) {
+      setDatasetMessage(
+        error instanceof Error ? error.message : "Dataset operation failed.",
+      );
+    }
+  }
+
   const wordModelReady = status?.model_ready ?? false;
   const stateModelReady = status?.state_model_ready ?? false;
   const dataReady = status?.data_ready ?? false;
@@ -264,6 +394,124 @@ export default function Home() {
             <span>DATASET</span>
             <strong>{dataset}</strong>
           </div>
+        </div>
+      </section>
+
+
+      <section className="panel datasetManager">
+        <div className="panelHead">
+          <div>
+            <span className="label">PUBLIC DATASETS</span>
+            <h3>Dataset manager</h3>
+          </div>
+          <div className="sourceTag">VERIFIED NEMAR SOURCES ONLY</div>
+        </div>
+
+        <p className="datasetIntro">
+          Download genuine public EEG directly into Lucid. Starter downloads use
+          three participants so subject-held-out train / validation / test splits
+          remain possible.
+        </p>
+
+        {datasetMessage && <div className="datasetMessage">{datasetMessage}</div>}
+
+        {datasetJob && ["queued", "running"].includes(datasetJob.status) && (
+          <div className="jobStrip">
+            <div>
+              <strong>
+                {datasetJob.kind === "download" ? "Downloading" : "Preparing"}{" "}
+                {datasetJob.dataset_id}
+              </strong>
+              <span>
+                {datasetJob.progress.message ??
+                  datasetJob.progress.phase ??
+                  datasetJob.status}
+              </span>
+            </div>
+            <div className="jobProgress">
+              {datasetJob.progress.files_total
+                ? `${datasetJob.progress.files_done ?? 0} / ${datasetJob.progress.files_total} files`
+                : datasetJob.status.toUpperCase()}
+            </div>
+          </div>
+        )}
+
+        <div className="datasetGrid">
+          {datasets.map((item) => {
+            const busy =
+              datasetJob?.dataset_id === item.id &&
+              ["queued", "running"].includes(datasetJob.status);
+            return (
+              <article className="datasetCard" key={item.id}>
+                <div className="datasetCardTop">
+                  <div>
+                    <span className="datasetId">{item.id}</span>
+                    <h4>{item.title}</h4>
+                  </div>
+                  <span className={item.word_prepared ? "readyBadge" : "idleBadge"}>
+                    {item.word_prepared ? "PREPARED" : item.downloaded ? "DOWNLOADED" : "AVAILABLE"}
+                  </span>
+                </div>
+
+                <p>{item.description}</p>
+
+                <div className="datasetMeta">
+                  <span>{item.license}</span>
+                  <span>{item.approx_size}</span>
+                  <span>{humanBytes(item.bytes_on_disk)} local</span>
+                </div>
+
+                <div className="datasetLabels">
+                  {item.labels.map((label) => (
+                    <span key={label}>{label}</span>
+                  ))}
+                </div>
+
+                <div className="datasetActions">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => startDatasetJob(item.id, "download", "recommended")}
+                  >
+                    {busy && datasetJob?.kind === "download"
+                      ? "WORKING…"
+                      : "DOWNLOAD 3 SUBJECTS"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    disabled={busy}
+                    onClick={() => startDatasetJob(item.id, "download", "all")}
+                  >
+                    DOWNLOAD ALL
+                  </button>
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    disabled={busy || !item.downloaded}
+                    onClick={() => startDatasetJob(item.id, "prepare")}
+                  >
+                    PREPARE EEG
+                  </button>
+                </div>
+
+                <div className="datasetFooter">
+                  <span>{item.downloaded_files} files</span>
+                  <span>
+                    {item.tasks.join(" + ")}
+                    {item.state_prepared ? " · state ready" : ""}
+                  </span>
+                  <a
+                    href={`https://nemar.org/dataset/${item.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    DOI {item.doi} ↗
+                  </a>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
 
