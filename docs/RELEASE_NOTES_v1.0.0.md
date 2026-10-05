@@ -39,3 +39,11 @@ their upstream licenses and attribution requirements.
 The v1 Windows installer is not Authenticode-signed. Windows SmartScreen may
 therefore display an unknown-publisher warning. Installer SHA-256 checksums are
 published with the release.
+
+
+## Validation evidence
+
+Lucid's v1 release gates are documented in `docs/V1_ACCEPTANCE.md`.
+Measured held-out results and source-provenance hashes are recorded in
+`docs/V1_VALIDATION.md`. The validation document contains actual workflow
+outputs only; pending measurements are not replaced with estimates.
