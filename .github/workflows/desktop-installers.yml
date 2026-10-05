@@ -250,6 +250,31 @@ jobs:
           fi
           sha256sum "$appimage" > desktop/dist/linux-appimage.sha256
 
+      - name: Verify macOS package contents
+        if: matrix.target == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+          backend=$(find desktop/dist -path '*/Lucid.app/Contents/Resources/backend/lucid-backend' -print -quit)
+          test -n "$backend"
+          test -x "$backend"
+
+          dmg=$(find desktop/dist -maxdepth 1 -name 'Lucid-1.0.1-macOS-x64.dmg' -print -quit)
+          zip=$(find desktop/dist -maxdepth 1 -name 'Lucid-1.0.1-macOS-x64.zip' -print -quit)
+          test -n "$dmg"
+          test -n "$zip"
+          test -f desktop/dist/latest-mac.yml
+
+          bytes=$(wc -c < "$dmg" | tr -d ' ')
+          echo "macOS DMG bytes: $bytes"
+          if [ "$bytes" -ge 2000000000 ]; then
+            echo "macOS DMG exceeds the GitHub Release per-file size limit."
+            exit 1
+          fi
+
+          shasum -a 256 "$dmg" > desktop/dist/macos-dmg.sha256
+          shasum -a 256 "$zip" > desktop/dist/macos-zip.sha256
+
       - name: Upload Windows installer
         if: matrix.target == 'win'
         uses: actions/upload-artifact@v4
@@ -271,6 +296,20 @@ jobs:
             desktop/dist/Lucid-*.AppImage
             desktop/dist/linux-appimage.sha256
             desktop/dist/latest-linux.yml
+            desktop/dist/*.blockmap
+          if-no-files-found: error
+
+      - name: Upload macOS app
+        if: matrix.target == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            desktop/dist/Lucid-1.0.1-macOS-x64.dmg
+            desktop/dist/Lucid-1.0.1-macOS-x64.zip
+            desktop/dist/macos-dmg.sha256
+            desktop/dist/macos-zip.sha256
+            desktop/dist/latest-mac.yml
             desktop/dist/*.blockmap
           if-no-files-found: error
 
