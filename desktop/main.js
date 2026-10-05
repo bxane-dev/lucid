@@ -123,7 +123,6 @@ function createStartupWindow() {
     show: false,
     backgroundColor: "#070707",
     autoHideMenuBar: true,
-    show: false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -235,6 +234,7 @@ function createWindow(url) {
     height: 920,
     minWidth: 900,
     minHeight: 650,
+    show: false,
     backgroundColor: "#070707",
     autoHideMenuBar: true,
     webPreferences: {
@@ -258,6 +258,35 @@ function createWindow(url) {
         shell.openExternal(navigationUrl);
       }
     }
+  });
+
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription) => {
+      appendDesktopLog(
+        "renderer load failure " +
+        String(errorCode) +
+        ": " +
+        String(errorDescription)
+      );
+    }
+  );
+
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    appendDesktopLog(
+      "renderer process gone: " +
+      String(details.reason) +
+      " exitCode=" +
+      String(details.exitCode)
+    );
+  });
+
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.show();
+    if (startupWindow && !startupWindow.isDestroyed()) {
+      startupWindow.close();
+    }
+    startupWindow = null;
   });
 
   mainWindow.loadURL(url);
@@ -285,12 +314,24 @@ process.on("unhandledRejection", (error) => {
 });
 
 app.whenReady().then(async () => {
-  createStartupWindow();
+  const selfTest = process.argv.includes("--self-test");
+  if (!selfTest) {
+    createStartupWindow();
+  }
   try {
     const port = await findFreePort();
     backendUrl = "http://" + HOST + ":" + port;
     startBackend(port);
     await waitForBackend(backendUrl);
+
+    if (selfTest) {
+      appendDesktopLog(
+        "Lucid packaged desktop self-test passed on local port " + String(port)
+      );
+      app.quit();
+      return;
+    }
+
     createWindow(backendUrl);
     appendDesktopLog("Lucid desktop started on local port " + String(port));
     configureAutoUpdater();
@@ -300,9 +341,12 @@ app.whenReady().then(async () => {
       startupWindow.close();
       startupWindow = null;
     }
+    const logs = path.join(app.getPath("userData"), "logs");
     dialog.showErrorBox(
       "Lucid could not start",
-      error instanceof Error ? error.message : String(error)
+      (error instanceof Error ? error.message : String(error)) +
+      "\n\nDiagnostics: " +
+      logs
     );
     app.quit();
   }
