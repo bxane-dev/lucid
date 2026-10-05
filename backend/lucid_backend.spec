@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_dynamic_libs
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
 
 SPEC_DIR = Path(SPEC).resolve().parent
@@ -10,6 +10,9 @@ ROOT = SPEC_DIR.parent
 FRONTEND = ROOT / "frontend" / "out"
 
 datas = [(str(FRONTEND), "frontend")]
+# MNE uses lazy_loader with .pyi stubs at runtime. PyInstaller treats those
+# type stubs as non-code data, so collect them explicitly.
+datas += collect_data_files("mne", includes=["**/*.pyi"])
 binaries = collect_dynamic_libs("torch")
 
 # Uvicorn loads its selected loop/protocol implementations by string, so
