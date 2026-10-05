@@ -1,0 +1,9 @@
+{
+  "requested_at": "2026-10-05",
+  "purpose": "Lucid v1.0 real public EEG validation",
+  "datasets": [
+    "nm000113",
+    "on003626"
+  ],
+  "fabricated_data": false
+}
