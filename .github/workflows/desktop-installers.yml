@@ -237,6 +237,14 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Verify v1 validation is complete
+        run: |
+          test -f docs/V1_VALIDATION.md
+          if grep -qi "pending" docs/V1_VALIDATION.md; then
+            echo "V1 validation evidence still contains pending gates."
+            exit 1
+          fi
+
       - name: Inventory release assets
         run: |
           find release-assets -maxdepth 2 -type f -printf '%P\n' | sort
