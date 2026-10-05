@@ -72,7 +72,9 @@ jobs:
           $env:LUCID_STORAGE_DIR = Join-Path $env:RUNNER_TEMP "lucid-smoke"
           $env:LUCID_DIAGNOSTIC_LOG = Join-Path $env:RUNNER_TEMP "lucid-backend-error.log"
           $exe = (Resolve-Path "backend/dist/lucid-backend/lucid-backend.exe").Path
-          $process = Start-Process -FilePath $exe -ArgumentList "--host","127.0.0.1","--port","18765" -PassThru
+          $stdout = Join-Path $env:RUNNER_TEMP "lucid-backend-stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "lucid-backend-stderr.log"
+          $process = Start-Process -FilePath $exe -ArgumentList "--host","127.0.0.1","--port","18765" -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
           try {
             $ready = $false
             for ($i = 0; $i -lt 45; $i++) {
