@@ -8,6 +8,10 @@ const { autoUpdater } = require("electron-updater");
 
 const HOST = "127.0.0.1";
 
+// Lucid's UI does not require GPU acceleration. Disabling it improves
+// startup reliability on systems with problematic Electron/Chromium drivers.
+app.disableHardwareAcceleration();
+
 let backend = null;
 let mainWindow = null;
 let backendUrl = null;
