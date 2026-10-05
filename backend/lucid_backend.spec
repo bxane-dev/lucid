@@ -67,7 +67,6 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         "pytest",
-        "unittest",
     ],
     noarchive=False,
 )
