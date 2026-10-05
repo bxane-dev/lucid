@@ -9,7 +9,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 
-from .db import init_db, log_prediction
+from .db import init_db, log_prediction, recent_predictions
 from .dataset_jobs import dataset_jobs
 from .model import ARCHITECTURES
 from .model_registry import model_registry, prepared_path
@@ -388,6 +388,17 @@ def reload_model():
     }
 
 
+@app.get("/api/predictions")
+def prediction_history(limit: int = 100):
+    return {
+        "predictions": recent_predictions(limit),
+        "note": (
+            "History contains only actual model outputs produced during "
+            "public-recording replay."
+        ),
+    }
+
+
 @app.post(
     "/api/predict/replay",
     response_model=Prediction,
@@ -425,6 +436,9 @@ def predict_replay():
             prediction=result.prediction,
             confidence=result.prediction_confidence,
             model_version=result.model_version,
+            state=result.state,
+            state_confidence=result.state_confidence,
+            provenance_sha256=result.provenance_sha256,
         )
 
     return result
@@ -510,6 +524,9 @@ async def live(websocket: WebSocket):
                     prediction=result.prediction,
                     confidence=result.prediction_confidence,
                     model_version=result.model_version,
+                    state=result.state,
+                    state_confidence=result.state_confidence,
+                    provenance_sha256=result.provenance_sha256,
                 )
 
             await asyncio.sleep(1.0)
