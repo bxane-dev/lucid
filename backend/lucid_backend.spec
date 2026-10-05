@@ -2,7 +2,11 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+from PyInstaller.utils.hooks import (
+    collect_data_files,
+    collect_dynamic_libs,
+    collect_submodules,
+)
 
 
 SPEC_DIR = Path(SPEC).resolve().parent
@@ -17,7 +21,22 @@ binaries = collect_dynamic_libs("torch")
 
 # Uvicorn loads its selected loop/protocol implementations by string, so
 # declare the exact implementations used by desktop_server.py.
+MNE_EXCLUDED_PREFIXES = (
+    "mne.tests",
+    "mne.viz",
+    "mne.report",
+    "mne.gui",
+    "mne.datasets",
+    "mne.commands",
+    "mne.export",
+)
+
 hiddenimports = [
+    name
+    for name in collect_submodules("mne")
+    if not name.startswith(MNE_EXCLUDED_PREFIXES)
+]
+hiddenimports += [
     "edfio",
     "uvicorn.logging",
     "uvicorn.loops.asyncio",
